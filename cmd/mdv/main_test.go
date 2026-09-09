@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"mdv/internal/render"
 )
 
 // runCLI invokes the command with a clean environment and captures its output.
@@ -178,5 +180,95 @@ func TestRunASCIIGlyphs(t *testing.T) {
 	}
 	if !strings.Contains(out, "*") {
 		t.Errorf("--ascii bullet missing: %q", out)
+	}
+}
+
+func TestResolveLinkMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		hyperlinks bool
+		want       render.LinkMode
+	}{
+		// On auto the decision follows the terminal: hide the URL when the
+		// text itself is clickable, show it when it is not.
+		{"auto", true, render.LinkHide},
+		{"auto", false, render.LinkInline},
+		{"", true, render.LinkHide},
+		{"", false, render.LinkInline},
+		// An explicit choice is honoured either way.
+		{"inline", true, render.LinkInline},
+		{"hide", false, render.LinkHide},
+	}
+	for _, tt := range tests {
+		got, err := resolveLinkMode(tt.name, tt.hyperlinks)
+		if err != nil {
+			t.Fatalf("resolveLinkMode(%q, %v): %v", tt.name, tt.hyperlinks, err)
+		}
+		if got != tt.want {
+			t.Errorf("resolveLinkMode(%q, hyperlinks=%v) = %v, want %v",
+				tt.name, tt.hyperlinks, got, tt.want)
+		}
+	}
+	if _, err := resolveLinkMode("sideways", false); err == nil {
+		t.Error("an unknown link mode should be rejected")
+	}
+}
+
+func TestRunCaps(t *testing.T) {
+	out, _, err := runCLI(t, "--caps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Terminal capabilities", "Kitty graphics", "Hyperlinks"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("caps report missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestRunCapsIsPlainWhenPiped checks that --caps obeys the same rule as
+// document output: no escape sequences when the target is not a terminal, so
+// it can be pasted into a bug report.
+func TestRunCapsIsPlainWhenPiped(t *testing.T) {
+	out, _, err := runCLI(t, "--caps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsRune(out, 0x1b) {
+		t.Errorf("caps report leaked escape sequences: %q", out)
+	}
+}
+
+func TestRunCapsIgnoresFileArguments(t *testing.T) {
+	path := writeTemp(t, "doc.md", "# Should not be rendered\n")
+	out, _, err := runCLI(t, "--caps", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "Should not be rendered") {
+		t.Error("--caps should report capabilities and exit, not render files")
+	}
+}
+
+// TestRunNoProbe checks the escape hatch for terminals that misbehave when
+// queried: it must still produce a report rather than failing.
+func TestRunNoProbe(t *testing.T) {
+	out, _, err := runCLI(t, "--no-probe", "--caps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Terminal capabilities") {
+		t.Errorf("no report produced:\n%s", out)
+	}
+}
+
+func TestRunNoProbeStillRenders(t *testing.T) {
+	path := writeTemp(t, "doc.md", "# Title\n")
+	out, _, err := runCLI(t, "--no-probe", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Title") {
+		t.Errorf("got %q", out)
 	}
 }

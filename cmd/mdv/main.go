@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"mdv/internal/render"
 	"mdv/internal/term"
@@ -30,6 +31,9 @@ type config struct {
 	linkName  string
 	ascii     bool
 	showVer   bool
+	showCaps  bool
+	noProbe   bool
+	probeWait time.Duration
 }
 
 func main() {
@@ -53,6 +57,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs.StringVar(&cfg.colorName, "color", "auto", "color depth: auto, none, 16, 256, truecolor")
 	fs.StringVar(&cfg.linkName, "links", "auto", "link display: auto, inline, hide")
 	fs.BoolVar(&cfg.ascii, "ascii", false, "use ASCII instead of Unicode box drawing")
+	fs.BoolVar(&cfg.showCaps, "caps", false, "report what the terminal supports and exit")
+	fs.BoolVar(&cfg.noProbe, "no-probe", false, "do not query the terminal; use the environment alone")
+	fs.DurationVar(&cfg.probeWait, "probe-timeout", term.DefaultProbeTimeout, "how long to wait for the terminal to answer")
 	fs.BoolVar(&cfg.showVer, "version", false, "print version and exit")
 	fs.Usage = func() { usage(stderr, fs) }
 
@@ -69,11 +76,19 @@ func run(args []string, stdout, stderr io.Writer) error {
 		out = nil
 	}
 
-	colorMode, err := resolveColor(cfg.colorName, out)
+	// One capability scan serves everything below: color depth, which theme
+	// suits the background, and whether hyperlinks are safe to emit.
+	caps := term.Detect(term.DetectOptions{
+		Out:     out,
+		Probe:   !cfg.noProbe,
+		Timeout: cfg.probeWait,
+	})
+
+	colorMode, err := resolveColor(cfg.colorName, caps)
 	if err != nil {
 		return err
 	}
-	th, err := theme.Get(cfg.themeName)
+	th, err := resolveTheme(cfg.themeName, caps)
 	if err != nil {
 		return err
 	}
@@ -87,22 +102,28 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if cfg.ascii {
 		th.Glyphs = theme.ASCIIGlyphs
 	}
-	linkMode, err := render.ParseLinkMode(cfg.linkName)
+	linkMode, err := resolveLinkMode(cfg.linkName, caps.Hyperlinks)
 	if err != nil {
 		return err
 	}
-	if linkMode == render.LinkAuto {
-		// Until terminal hyperlink support is probed for, showing the URL is
-		// the only way a reader can act on a link.
-		linkMode = render.LinkInline
-	}
+	hyperlinks := caps.Hyperlinks
 
 	width := cfg.width
 	if width <= 0 {
-		width = autoWidth(out)
+		width = autoWidth(caps)
 	}
 
-	writeOpts := render.WriteOptions{Color: colorMode}
+	writeOpts := render.WriteOptions{Color: colorMode, Hyperlinks: hyperlinks}
+
+	if cfg.showCaps {
+		doc, err := render.Render([]byte(caps.Report()), render.Options{
+			Width: width, Theme: th, LinkMode: linkMode,
+		})
+		if err != nil {
+			return err
+		}
+		return render.Write(stdout, doc, writeOpts)
+	}
 
 	inputs := fs.Args()
 	if len(inputs) == 0 {
@@ -176,29 +197,61 @@ func writeFileHeader(w io.Writer, name string, width int, th *theme.Theme, opts 
 	return err
 }
 
-// resolveColor turns the --color flag into a mode, consulting the environment
-// when it is left on auto.
-func resolveColor(name string, out *os.File) (theme.ColorMode, error) {
+// resolveColor turns the --color flag into a mode, deferring to the detected
+// capabilities when it is left on auto.
+func resolveColor(name string, caps term.Caps) (theme.ColorMode, error) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "", "auto":
-		return term.DetectColor(out), nil
+		return caps.Color, nil
 	case "always", "force", "yes":
 		return term.ForcedColor(), nil
 	}
 	return theme.ParseColorMode(name)
 }
 
+// resolveLinkMode decides how link destinations are shown.
+//
+// On auto, the presence of OSC 8 support settles it: with hyperlinks the URL
+// is carried by the link text itself and printing it again in parentheses is
+// noise, while without them the visible URL is the only way a reader can act
+// on the link.
+func resolveLinkMode(name string, hyperlinks bool) (render.LinkMode, error) {
+	mode, err := render.ParseLinkMode(name)
+	if err != nil {
+		return mode, err
+	}
+	if mode == render.LinkAuto {
+		if hyperlinks {
+			return render.LinkHide, nil
+		}
+		return render.LinkInline, nil
+	}
+	return mode, nil
+}
+
+// resolveTheme picks the theme, using the terminal's actual background color
+// to choose between dark and light when the name is left on auto. Reading the
+// background beats guessing from COLORFGBG, which most terminals never set.
+func resolveTheme(name string, caps term.Caps) (*theme.Theme, error) {
+	if n := strings.ToLower(strings.TrimSpace(name)); n == "" || n == "auto" {
+		if caps.Dark() {
+			return theme.Dark(), nil
+		}
+		return theme.Light(), nil
+	}
+	return theme.Get(name)
+}
+
 // autoWidth picks a layout width from the terminal, or a readable default when
 // output is not going to one.
-func autoWidth(out *os.File) int {
-	if !term.IsTerminal(out) {
+func autoWidth(caps term.Caps) int {
+	if !caps.TTY {
 		return 80
 	}
-	w, _ := term.Size(out)
-	if w > maxAutoWidth {
+	if caps.Cols > maxAutoWidth {
 		return maxAutoWidth
 	}
-	return w
+	return caps.Cols
 }
 
 func usage(w io.Writer, fs *flag.FlagSet) {
