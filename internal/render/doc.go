@@ -56,12 +56,51 @@ func (l Line) Text() string {
 	return b.String()
 }
 
+// Image is a picture occupying whole rows of the document.
+//
+// The rows it covers are present in Lines as blanks, so line numbering stays
+// continuous and the pager can scroll past an image without special cases.
+// What makes it an image is this entry, which says where to draw one.
+type Image struct {
+	// Ref is the resolved path or URL of the image file.
+	Ref string
+	// Alt is the styled text to show instead when drawing fails. It is also
+	// present in Lines, on the first row the image covers, so that the
+	// document's text contains it whether or not the picture is drawn.
+	Alt []Run
+	// Prefix is the decoration at the start of the covered rows - a blockquote
+	// bar, a list indent. It is written even when the image is drawn, so the
+	// picture sits beside the same structure as the text around it.
+	Prefix []Run
+	// Line is the index of the first row the image covers.
+	Line int
+	// Cols and Rows are its footprint in cells.
+	Cols, Rows int
+	// Indent is how far from the left margin it starts, so an image inside a
+	// list or a blockquote lines up with the text around it.
+	Indent int
+}
+
 // Doc is a fully rendered markdown document.
 type Doc struct {
 	Lines []Line
+	// Images are the pictures to draw, in document order.
+	Images []Image
 	// Width is the column count the document was laid out for. Fills and
 	// centered elements are measured against it.
 	Width int
+}
+
+// ImageAt returns the image starting at the given line, if there is one.
+func (d *Doc) ImageAt(line int) (Image, bool) {
+	// Documents hold few images and they are in order, so a scan is cheaper
+	// than building and carrying an index.
+	for _, img := range d.Images {
+		if img.Line == line {
+			return img, true
+		}
+	}
+	return Image{}, false
 }
 
 // Text returns the whole document as unstyled text, one line per row. The

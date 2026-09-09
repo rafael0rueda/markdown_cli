@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"mdv/internal/graphics"
 	"mdv/internal/render"
+	"mdv/internal/term"
 )
 
 // runCLI invokes the command with a clean environment and captures its output.
@@ -270,5 +272,100 @@ func TestRunNoProbeStillRenders(t *testing.T) {
 	}
 	if !strings.Contains(out, "Title") {
 		t.Errorf("got %q", out)
+	}
+}
+
+func TestResolveImages(t *testing.T) {
+	tests := []struct {
+		name    string
+		flag    string
+		caps    term.Caps
+		wantNil bool
+		want    graphics.Protocol
+	}{
+		{"auto with kitty", "auto", term.Caps{KittyGraphics: true}, false, graphics.Kitty},
+		{"auto with sixel", "auto", term.Caps{Sixel: true}, false, graphics.Sixel},
+		{"auto prefers kitty", "auto", term.Caps{KittyGraphics: true, Sixel: true}, false, graphics.Kitty},
+		// Nothing is detected for a pipe, so auto draws nothing into it.
+		{"auto with neither", "auto", term.Caps{}, true, graphics.None},
+		{"explicitly off", "none", term.Caps{KittyGraphics: true}, true, graphics.None},
+		{"explicitly kitty", "kitty", term.Caps{}, false, graphics.Kitty},
+		{"explicitly sixel", "sixel", term.Caps{}, false, graphics.Sixel},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveImages(config{images: tt.flag}, tt.caps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("got %+v, want nil so the renderer falls back to alt text", got)
+				}
+				return
+			}
+			r, ok := got.(*graphics.Renderer)
+			if !ok {
+				t.Fatalf("got %T, want *graphics.Renderer", got)
+			}
+			if r.Protocol != tt.want {
+				t.Errorf("protocol = %v, want %v", r.Protocol, tt.want)
+			}
+		})
+	}
+
+	if _, err := resolveImages(config{images: "iterm"}, term.Caps{}); err == nil {
+		t.Error("an unknown image mode should be rejected")
+	}
+}
+
+func TestResolveImagesCarriesCellSize(t *testing.T) {
+	got, err := resolveImages(config{images: "kitty"}, term.Caps{CellWidth: 9, CellHeight: 18})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := got.(*graphics.Renderer)
+	if r.CellWidth != 9 || r.CellHeight != 18 {
+		t.Errorf("cell size = %dx%d, want 9x18", r.CellWidth, r.CellHeight)
+	}
+}
+
+func TestResolveImagesRemoteOptIn(t *testing.T) {
+	off, _ := resolveImages(config{images: "kitty"}, term.Caps{})
+	if off.(*graphics.Renderer).Loader.AllowRemote {
+		t.Error("remote images should be off unless asked for")
+	}
+	on, _ := resolveImages(config{images: "kitty", remoteImg: true}, term.Caps{})
+	if !on.(*graphics.Renderer).Loader.AllowRemote {
+		t.Error("--remote-images was not honoured")
+	}
+}
+
+func TestMaxImageRows(t *testing.T) {
+	if got := maxImageRows(term.Caps{Rows: 40}); got != 38 {
+		t.Errorf("got %d, want 38 so the image cannot fill the whole screen", got)
+	}
+	// An implausible terminal height falls back to the renderer's own default.
+	if got := maxImageRows(term.Caps{Rows: 2}); got != 0 {
+		t.Errorf("got %d, want 0", got)
+	}
+}
+
+// TestRunPipedOutputHasNoImages is the safety property for redirection: a file
+// on disk must not end up with graphics escape sequences in it.
+func TestRunPipedOutputHasNoImages(t *testing.T) {
+	dir := t.TempDir()
+	doc := filepath.Join(dir, "doc.md")
+	os.WriteFile(doc, []byte("![alt text](pic.png)\n"), 0o644)
+
+	out, _, err := runCLI(t, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsRune(out, 0x1b) {
+		t.Errorf("escape sequences in piped output: %q", out)
+	}
+	if !strings.Contains(out, "alt text") {
+		t.Errorf("alt text missing: %q", out)
 	}
 }

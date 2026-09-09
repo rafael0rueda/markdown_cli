@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"mdv/internal/graphics"
 	"mdv/internal/render"
 	"mdv/internal/term"
 	"mdv/internal/theme"
@@ -34,6 +35,8 @@ type config struct {
 	showCaps  bool
 	noProbe   bool
 	probeWait time.Duration
+	images    string
+	remoteImg bool
 }
 
 func main() {
@@ -57,6 +60,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs.StringVar(&cfg.colorName, "color", "auto", "color depth: auto, none, 16, 256, truecolor")
 	fs.StringVar(&cfg.linkName, "links", "auto", "link display: auto, inline, hide")
 	fs.BoolVar(&cfg.ascii, "ascii", false, "use ASCII instead of Unicode box drawing")
+	fs.StringVar(&cfg.images, "images", "auto", "image drawing: auto, none, kitty, sixel")
+	fs.BoolVar(&cfg.remoteImg, "remote-images", false, "fetch images over http, off by default")
 	fs.BoolVar(&cfg.showCaps, "caps", false, "report what the terminal supports and exit")
 	fs.BoolVar(&cfg.noProbe, "no-probe", false, "do not query the terminal; use the environment alone")
 	fs.DurationVar(&cfg.probeWait, "probe-timeout", term.DefaultProbeTimeout, "how long to wait for the terminal to answer")
@@ -113,7 +118,16 @@ func run(args []string, stdout, stderr io.Writer) error {
 		width = autoWidth(caps)
 	}
 
-	writeOpts := render.WriteOptions{Color: colorMode, Hyperlinks: hyperlinks}
+	imageHandler, err := resolveImages(cfg, caps)
+	if err != nil {
+		return err
+	}
+
+	writeOpts := render.WriteOptions{
+		Color:      colorMode,
+		Hyperlinks: hyperlinks,
+		Images:     imageHandler,
+	}
 
 	if cfg.showCaps {
 		doc, err := render.Render([]byte(caps.Report()), render.Options{
@@ -143,10 +157,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 		doc, err := render.Render(source, render.Options{
-			Width:    width,
-			Theme:    th,
-			LinkMode: linkMode,
-			BaseDir:  baseDir,
+			Width:        width,
+			Theme:        th,
+			LinkMode:     linkMode,
+			BaseDir:      baseDir,
+			Images:       imageHandler,
+			MaxImageRows: maxImageRows(caps),
 		})
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
@@ -227,6 +243,50 @@ func resolveLinkMode(name string, hyperlinks bool) (render.LinkMode, error) {
 		return render.LinkInline, nil
 	}
 	return mode, nil
+}
+
+// resolveImages builds the image handler, or returns nil to fall back to alt
+// text everywhere.
+//
+// A nil interface value is returned rather than a typed nil, because the
+// renderer tests the interface against nil to decide whether to attempt
+// images at all.
+func resolveImages(cfg config, caps term.Caps) (render.ImageHandler, error) {
+	protocol, auto, err := graphics.ParseProtocol(cfg.images)
+	if err != nil {
+		return nil, err
+	}
+	if auto {
+		// On auto, only draw what the terminal was found to support. This is
+		// also what keeps a redirected stream clean: nothing is detected for a
+		// pipe, so nothing is drawn into it.
+		switch {
+		case caps.KittyGraphics:
+			protocol = graphics.Kitty
+		case caps.Sixel:
+			protocol = graphics.Sixel
+		default:
+			protocol = graphics.None
+		}
+	}
+	if protocol == graphics.None {
+		return nil, nil
+	}
+	return &graphics.Renderer{
+		Protocol:   protocol,
+		Loader:     &graphics.Loader{AllowRemote: cfg.remoteImg},
+		CellWidth:  caps.CellWidth,
+		CellHeight: caps.CellHeight,
+	}, nil
+}
+
+// maxImageRows caps image height at nearly a full screen, so a picture cannot
+// push the text it belongs to entirely out of view.
+func maxImageRows(caps term.Caps) int {
+	if caps.Rows > 4 {
+		return caps.Rows - 2
+	}
+	return 0
 }
 
 // resolveTheme picks the theme, using the terminal's actual background color

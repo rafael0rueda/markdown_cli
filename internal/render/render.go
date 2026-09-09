@@ -25,6 +25,10 @@ type Options struct {
 	// BaseDir is the directory the document was loaded from. Relative image
 	// and link paths resolve against it.
 	BaseDir string
+	// Images draws pictures. Nil shows alt text instead.
+	Images ImageHandler
+	// MaxImageRows caps how tall any single image may be. Zero uses a default.
+	MaxImageRows int
 }
 
 // LinkMode selects how a link's destination is presented.
@@ -182,8 +186,14 @@ func (r *renderer) renderBlock(n ast.Node) {
 	case *ast.Heading:
 		r.heading(n)
 	case *ast.Paragraph:
+		if r.blockImage(n) {
+			return
+		}
 		r.emit(r.inlineChildren(n, r.base, ""))
 	case *ast.TextBlock:
+		if r.blockImage(n) {
+			return
+		}
 		r.emit(r.inlineChildren(n, r.base, ""))
 	case *ast.Blockquote:
 		r.blockquote(n)

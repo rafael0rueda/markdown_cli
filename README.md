@@ -9,17 +9,15 @@ mdv README.md
 
 ## Status
 
-Phases 1 and 2 are complete. Markdown renders to stdout with syntax-highlighted
-code, wrapped prose, and box-drawn tables. mdv asks the terminal what it
-supports and adapts: color depth, dark or light theme from the actual
-background color, and clickable OSC 8 hyperlinks. Images are still shown as
-alt text.
+Phases 1 to 4 are complete. Markdown renders to stdout with syntax-highlighted
+code, wrapped prose, box-drawn tables, clickable hyperlinks, and inline images
+drawn with the kitty graphics protocol or sixel. mdv asks the terminal what it
+supports and adapts to the answer.
 
 Still to come:
 
 | Phase | What it adds |
 |-------|--------------|
-| 4 | Inline images via the kitty graphics protocol, with a sixel fallback |
 | 5 | An interactive pager: scrolling, search, resize |
 | 6 | Config file, man page, packaging |
 
@@ -56,6 +54,8 @@ With no file, or with `-`, mdv reads from standard input.
 | `-color` | `auto` | `none`, `16`, `256`, `truecolor`, `always` |
 | `-links` | `auto` | `inline` shows URLs, `hide` shows only link text |
 | `-ascii` | off | ASCII instead of Unicode box drawing |
+| `-images` | `auto` | `none`, `kitty`, `sixel` |
+| `-remote-images` | off | Fetch images over http |
 | `-caps` | | Report what the terminal supports, and exit |
 | `-no-probe` | off | Never query the terminal; use the environment alone |
 | `-probe-timeout` | `300ms` | How long to wait for the terminal to answer |
@@ -76,6 +76,47 @@ prose set much wider than that is measurably harder to read. `-width` overrides.
 theme is mapped to the nearest *hue* rather than the nearest RGB value. Nearest
 RGB is the obvious approach and it is wrong: it collapses almost every pastel
 onto white, which is technically accurate and useless to read.
+
+## How images work
+
+An image on a line of its own becomes a picture:
+
+```markdown
+![a diagram](diagram.png)
+```
+
+An image inside a sentence stays as alt text. Both graphics protocols draw into
+a rectangle of whole character cells, so a picture placed mid-line would either
+overwrite the words beside it or force the line to be as tall as the image.
+Markdown that means to show a picture puts it on its own line anyway.
+
+PNG, JPEG, GIF, WebP, BMP and TIFF are supported. Paths are relative to the
+document, not to your shell's working directory.
+
+**Remote images are not fetched** unless you pass `-remote-images`. Rendering a
+document should not tell a third party your address and when you read it.
+
+Anything that cannot be drawn — a missing file, an unreadable format, a
+terminal without graphics — falls back to the alt text. A broken picture never
+breaks the document.
+
+Some details that took care to get right:
+
+- **Rows are reserved before the picture is drawn.** mdv writes the blank lines
+  first, then moves the cursor back up and draws over them. That forces any
+  scrolling to happen up front, so the image cannot be scrolled halfway off the
+  screen as it is drawn.
+- **The cursor is saved at the left margin**, before the indent for an image
+  inside a list or blockquote is applied. Saving after would leave every
+  following line shifted right.
+- **Kitty image identifiers start from a random base.** They are global to the
+  terminal session and re-using one replaces the earlier image, so counting
+  from one would make a second run of mdv erase the first run's pictures from
+  your scrollback.
+- **Sixel is a great deal more work than kitty.** Kitty takes a PNG and scales
+  it itself. Sixel has no compression, no alpha and a 256-color limit, so the
+  image has to be scaled, reduced with a median cut and dithered before it can
+  be sent. The same picture is typically five times larger on the wire.
 
 ## How capability detection works
 
@@ -122,6 +163,7 @@ cmd/mdv/          flag parsing, input dispatch
 internal/theme/   colors, styles, palettes, glyph sets
 internal/term/    terminal capability detection and probing
 internal/render/  markdown -> a line-addressed document of styled runs
+internal/graphics/ decoding, scaling, and the kitty and sixel protocols
 ```
 
 The renderer does not produce a string. It produces a `Doc`: a flat slice of
@@ -146,6 +188,11 @@ make golden     # then read the diff before committing it
 
 Goldens compare unstyled text so the palette can change without churning them;
 escape-sequence output is asserted separately in `ansi_test.go`.
+
+The sixel encoder is verified by round-trip: the tests contain a sixel decoder,
+and the encoded image is decoded again and compared against the source. Checking
+the shape of the escape sequence would only confirm it looks plausible; decoding
+it confirms it means the right thing.
 
 Capability detection is tested at two levels. The reply parser is a pure
 function over a byte buffer, so it is exercised against replies captured from
