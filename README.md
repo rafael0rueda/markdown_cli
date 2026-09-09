@@ -221,3 +221,10 @@ images redrawn as you move — is the next planned piece; for now, pipe to
 Rust, and [`glow`](https://github.com/charmbracelet/glow) is an excellent Go
 markdown renderer without inline images. mdv differs mainly in the Obsidian
 support and in measuring terminal capabilities rather than inferring them.
+
+## License
+
+[MIT](LICENSE) © Rafael Rueda.
+
+The dependencies are all permissively licensed too — goldmark, chroma, uniseg
+and regexp2 under MIT, and the `golang.org/x` packages under BSD-3-Clause.
