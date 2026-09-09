@@ -128,6 +128,11 @@ type Theme struct {
 	// document's YAML frontmatter.
 	MetaKey   Style
 	MetaValue Style
+
+	// Status is the pager's bar along the bottom of the screen, and
+	// SearchMatch marks the text a search found.
+	Status      Style
+	SearchMatch Style
 }
 
 // Catppuccin Mocha, used for the dark theme.
@@ -148,6 +153,7 @@ var (
 	mochaSurface1 = Hex("#45475a")
 	mochaSurface0 = Hex("#313244")
 	mochaMantle   = Hex("#181825")
+	mochaYellow   = Hex("#f9e2af")
 )
 
 // Catppuccin Latte, used for the light theme.
@@ -167,6 +173,7 @@ var (
 	latteSurface1 = Hex("#bcc0cc")
 	latteSurface0 = Hex("#ccd0da")
 	latteMantle   = Hex("#e6e9ef")
+	latteYellow   = Hex("#df8e1d")
 )
 
 // Dark returns the default dark theme. Body text is deliberately left unstyled
@@ -218,6 +225,9 @@ func Dark() *Theme {
 
 		MetaKey:   Style{FG: mochaOverlay1},
 		MetaValue: Style{FG: mochaSubtext0},
+
+		Status:      Style{FG: mochaSubtext0, BG: mochaSurface0},
+		SearchMatch: Style{FG: mochaMantle, BG: mochaYellow, Bold: true},
 	}
 }
 
@@ -269,6 +279,9 @@ func Light() *Theme {
 
 		MetaKey:   Style{FG: latteOverlay1},
 		MetaValue: Style{FG: latteSubtext0},
+
+		Status:      Style{FG: latteSubtext0, BG: latteSurface0},
+		SearchMatch: Style{FG: latteMantle, BG: latteYellow, Bold: true},
 	}
 }
 
@@ -286,6 +299,8 @@ func Plain() *Theme {
 		Strike:      Style{Strike: true},
 		Link:        Style{Underline: true},
 		MetaKey:     Style{Faint: true},
+		Status:      Style{Reverse: true},
+		SearchMatch: Style{Reverse: true},
 	}
 	for i := range t.Headings {
 		t.Headings[i] = Style{Bold: true}

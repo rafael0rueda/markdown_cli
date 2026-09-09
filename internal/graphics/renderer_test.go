@@ -146,15 +146,13 @@ func TestEncodeKittyCarriesFootprint(t *testing.T) {
 	}
 }
 
-// TestEncodeIDsAreDistinct matters because a repeated identifier replaces the
-// earlier image rather than adding a second one.
-func TestEncodeIDsAreDistinct(t *testing.T) {
+// TestDistinctImagesGetDistinctIDs matters because a repeated identifier
+// replaces the earlier image rather than adding a second one.
+func TestDistinctImagesGetDistinctIDs(t *testing.T) {
 	r := testRenderer(Kitty)
-	ref := filepath.Join("testdata", "alpha.png")
-
-	seen := map[string]bool{}
-	for i := 0; i < 5; i++ {
-		out, err := r.Encode(ref, 4, 2, 0)
+	seen := map[string]string{}
+	for _, name := range []string{"alpha.png", "gradient.png", "wide.png", "tiny.png"} {
+		out, err := r.Encode(filepath.Join("testdata", name), 4, 2, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -162,10 +160,49 @@ func TestEncodeIDsAreDistinct(t *testing.T) {
 		if id == "" {
 			t.Fatalf("no image id in %q", truncate(out))
 		}
-		if seen[id] {
-			t.Errorf("image id %s was reused", id)
+		if other, ok := seen[id]; ok {
+			t.Errorf("%s and %s share image id %s", name, other, id)
 		}
-		seen[id] = true
+		seen[id] = name
+	}
+}
+
+// TestRepeatedImageIsSentOnce is what makes scrolling affordable: drawing the
+// same picture again reuses the transmitted copy instead of base64-encoding
+// the whole file a second time.
+func TestRepeatedImageIsSentOnce(t *testing.T) {
+	r := testRenderer(Kitty)
+	ref := filepath.Join("testdata", "gradient.png")
+
+	first, err := r.Encode(ref, 8, 4, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := r.Encode(ref, 8, 4, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(first, "a=t") {
+		t.Error("the first draw should transmit the image")
+	}
+	if strings.Contains(second, "a=t") {
+		t.Errorf("the image was transmitted again on the second draw: %q", truncate(second))
+	}
+	if !strings.Contains(second, "a=p") {
+		t.Errorf("the second draw should still place the image: %q", truncate(second))
+	}
+	if len(second) >= len(first) {
+		t.Errorf("redrawing produced %d bytes against %d for the first draw; "+
+			"it should be far smaller", len(second), len(first))
+	}
+	// Both draws must name the same stored image.
+	if regexpFind(first, `i=(\d+)`) != regexpFind(second, `i=(\d+)`) {
+		t.Error("the second draw referred to a different image id")
+	}
+	// But they are separate placements, or the second would replace the first.
+	if regexpFind(first, `p=(\d+)`) == regexpFind(second, `p=(\d+)`) {
+		t.Error("both draws used the same placement id")
 	}
 }
 

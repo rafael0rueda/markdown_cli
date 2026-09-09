@@ -64,6 +64,9 @@ type Renderer struct {
 	// nextID hands out kitty image identifiers.
 	nextID atomic.Uint32
 	seedID sync.Once
+
+	mu       sync.Mutex
+	prepared map[prepareKey]preparedEntry
 }
 
 // imageID returns the next kitty image identifier.
@@ -118,8 +121,174 @@ func (r *Renderer) Measure(ref string, maxCols, maxRows int, hint render.SizeHin
 	return geo.Cols, geo.Rows, nil
 }
 
-// Encode returns the escape sequence that draws the image in a box of exactly
-// cols by rows cells, indented by the given number of columns, including the
+// Prepared is an image made ready to draw, repeatedly and in pieces.
+//
+// Preparing is the expensive step - decoding, scaling, and for sixel a median
+// cut and a dither - and it depends only on the image and the box it goes in.
+// The pager redraws on every scroll step, so that work is done once and each
+// frame only asks for the rows it needs.
+type Prepared struct {
+	protocol Protocol
+	cols     int
+	rows     int
+
+	kitty *kittyImage
+	sixel *sixelImage
+
+	// pixelHeight is the height of the drawable content, which the row crop is
+	// converted into.
+	pixelHeight int
+
+	// sent records whether the image data has reached the terminal yet. Only
+	// the kitty protocol has anything to send ahead of drawing.
+	sent bool
+	// placement numbers each drawing of this image. Placements are cleared at
+	// the start of every frame, so this only has to be unique among the
+	// placements alive at one time.
+	placement atomic.Uint32
+}
+
+// Cols and Rows are the footprint the image was prepared for.
+func (p *Prepared) Cols() int { return p.cols }
+func (p *Prepared) Rows() int { return p.rows }
+
+// prepareKey identifies a prepared image, so that the same picture drawn at
+// the same size is only ever built once.
+type prepareKey struct {
+	ref        string
+	cols, rows int
+}
+
+// Prepare makes an image ready to draw in a box of cols by rows cells.
+func (r *Renderer) Prepare(ref string, cols, rows int) (*Prepared, error) {
+	if !r.Enabled() {
+		return nil, errors.New("images are disabled")
+	}
+	key := prepareKey{ref: ref, cols: cols, rows: rows}
+
+	r.mu.Lock()
+	if p, ok := r.prepared[key]; ok {
+		r.mu.Unlock()
+		return p.prep, p.err
+	}
+	r.mu.Unlock()
+
+	prep, err := r.prepare(ref, cols, rows)
+
+	r.mu.Lock()
+	if r.prepared == nil {
+		r.prepared = make(map[prepareKey]preparedEntry)
+	}
+	r.prepared[key] = preparedEntry{prep: prep, err: err}
+	r.mu.Unlock()
+
+	return prep, err
+}
+
+type preparedEntry struct {
+	prep *Prepared
+	err  error
+}
+
+func (r *Renderer) prepare(ref string, cols, rows int) (*Prepared, error) {
+	src, err := r.Loader.Load(ref)
+	if err != nil {
+		return nil, err
+	}
+	geo := r.fit(src, cols, rows)
+	geo.Cols, geo.Rows = cols, rows
+
+	p := &Prepared{protocol: r.Protocol, cols: cols, rows: rows}
+
+	switch r.Protocol {
+	case Kitty:
+		img, err := prepareKitty(src, geo, r.imageID())
+		if err != nil {
+			return nil, err
+		}
+		p.kitty, p.pixelHeight = img, img.pixelHeight
+
+	case Sixel:
+		img, err := prepareSixel(src, geo)
+		if err != nil {
+			return nil, err
+		}
+		if img == nil {
+			return nil, errors.New("image is entirely transparent")
+		}
+		p.sixel, p.pixelHeight = img, img.height
+
+	default:
+		return nil, errors.New("no image protocol selected")
+	}
+	return p, nil
+}
+
+// draw returns the sequence that renders rows [skip, skip+visible) of the
+// image at the cursor, without any surrounding cursor movement.
+//
+// Cropping in rows is what lets an image be scrolled through rather than
+// appearing and disappearing whole. The row range is converted to pixels
+// against the prepared height, so it stays correct whatever the terminal's
+// cell size turned out to be.
+func (p *Prepared) draw(skip, visible int) string {
+	if p == nil || visible < 1 || skip >= p.rows {
+		return ""
+	}
+	visible = min(visible, p.rows-skip)
+
+	top := skip * p.pixelHeight / p.rows
+	bottom := (skip + visible) * p.pixelHeight / p.rows
+	if bottom <= top {
+		return ""
+	}
+
+	switch p.protocol {
+	case Kitty:
+		var b strings.Builder
+		if !p.sent {
+			b.WriteString(p.kitty.transmit())
+			p.sent = true
+		}
+		b.WriteString(p.kitty.place(p.placement.Add(1)&idMask, p.cols, visible, top, bottom-top))
+		return b.String()
+	case Sixel:
+		return p.sixel.encode(top, bottom)
+	}
+	return ""
+}
+
+// ClearPlacements returns the sequence that removes the images currently on
+// screen without discarding the data behind them, so the next frame can draw
+// them again without retransmitting.
+//
+// Sixel has no notion of a placement - the pixels were written into the screen
+// like text - so there is nothing to clear and redrawing the frame is what
+// erases them.
+func (r *Renderer) ClearPlacements() string {
+	if r != nil && r.Protocol == Kitty {
+		return kittyClearPlacements
+	}
+	return ""
+}
+
+// DrawCropped returns the escape sequence drawing part of an image at the
+// cursor, for a caller that positions the cursor itself. The pager uses this;
+// it does no cursor movement of its own beyond what the protocol requires.
+func (r *Renderer) DrawCropped(ref string, cols, rows, skip, visible int) (string, error) {
+	prep, err := r.Prepare(ref, cols, rows)
+	if err != nil {
+		return "", err
+	}
+	seq := prep.draw(skip, visible)
+	if seq == "" {
+		return "", errors.New("nothing to draw")
+	}
+	return seq, nil
+}
+
+// Encode returns the escape sequence that draws a whole image in a box of
+// exactly cols by rows cells, indented by the given columns, including the
 // cursor movement to step past it.
 //
 // Passing back the footprint Measure produced reproduces the same geometry:
@@ -129,25 +298,11 @@ func (r *Renderer) Encode(ref string, cols, rows, indent int) (string, error) {
 	if !r.Enabled() {
 		return "", errors.New("images are disabled")
 	}
-	src, err := r.Loader.Load(ref)
+	prep, err := r.Prepare(ref, cols, rows)
 	if err != nil {
 		return "", err
 	}
-	geo := r.fit(src, cols, rows)
-	geo.Cols, geo.Rows = cols, rows
-
-	var payload string
-	switch r.Protocol {
-	case Kitty:
-		payload, err = encodeKitty(src, geo, r.imageID())
-	case Sixel:
-		payload, err = encodeSixel(src, geo)
-	default:
-		return "", errors.New("no image protocol selected")
-	}
-	if err != nil {
-		return "", err
-	}
+	payload := prep.draw(0, rows)
 	if payload == "" {
 		return "", errors.New("image encoded to nothing")
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/rafael0rueda/markdown_cli/internal/graphics"
 	"github.com/rafael0rueda/markdown_cli/internal/render"
 	"github.com/rafael0rueda/markdown_cli/internal/term"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // runCLI invokes the command with a clean environment and captures its output.
@@ -519,3 +520,129 @@ func TestRunStdinHasNoVault(t *testing.T) {
 		t.Errorf("label missing: %q", out)
 	}
 }
+
+func TestUsePager(t *testing.T) {
+	tests := []struct {
+		mode string
+		caps term.Caps
+		want bool
+	}{
+		// On auto it follows the terminal, which is what keeps redirection and
+		// piping into another program working.
+		{"auto", term.Caps{TTY: true}, true},
+		{"auto", term.Caps{TTY: false}, false},
+		{"", term.Caps{TTY: true}, true},
+		{"never", term.Caps{TTY: true}, false},
+		{"off", term.Caps{TTY: true}, false},
+		{"always", term.Caps{TTY: false}, true},
+	}
+	for _, tt := range tests {
+		if got := usePager(tt.mode, tt.caps, nil); got != tt.want {
+			t.Errorf("usePager(%q, tty=%v) = %v, want %v",
+				tt.mode, tt.caps.TTY, got, tt.want)
+		}
+	}
+}
+
+func TestPagerRequired(t *testing.T) {
+	for _, mode := range []string{"always", "yes", "ALWAYS"} {
+		if !pagerRequired(mode) {
+			t.Errorf("%q should require the pager", mode)
+		}
+	}
+	for _, mode := range []string{"auto", "never", ""} {
+		if pagerRequired(mode) {
+			t.Errorf("%q should not require the pager", mode)
+		}
+	}
+}
+
+// TestRunNeverPagesWhenPiped is the property that keeps mdv usable in a
+// pipeline: writing to anything but a terminal streams the document out.
+func TestRunNeverPagesWhenPiped(t *testing.T) {
+	path := writeTemp(t, "doc.md", "# Title\n\nBody.\n")
+	out, _, err := runCLI(t, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Title") || !strings.Contains(out, "Body.") {
+		t.Errorf("document was not written out: %q", out)
+	}
+	if strings.ContainsRune(out, 0x1b) {
+		t.Errorf("escape sequences in piped output: %q", out)
+	}
+}
+
+// TestRunMultipleFilesAreCombined checks that several inputs become one
+// document, which is what lets the pager scroll through them as a unit.
+func TestRunMultipleFilesAreCombined(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.md")
+	b := filepath.Join(dir, "b.md")
+	os.WriteFile(a, []byte("alpha\n"), 0o644)
+	os.WriteFile(b, []byte("bravo\n"), 0o644)
+
+	out, _, err := runCLI(t, "--width", "60", a, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"a.md", "b.md", "alpha", "bravo"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	// The header for the second file must come after the first file's body.
+	if strings.Index(out, "alpha") > strings.Index(out, "b.md") {
+		t.Errorf("documents are out of order:\n%s", out)
+	}
+}
+
+// TestRenderAllShiftsImageLines guards the bookkeeping that combining
+// documents requires: placements are line-numbered, so they have to move with
+// the lines they belong to.
+func TestRenderAllShiftsImageLines(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.md")
+	second := filepath.Join(dir, "second.md")
+	os.WriteFile(first, []byte("one\n\ntwo\n\nthree\n"), 0o644)
+	os.WriteFile(second, []byte("![alt](pic.png)\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "pic.png"), []byte("x"), 0o644)
+
+	docs, err := loadInputs([]string{first, second})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	images := &countingHandler{cols: 10, rows: 3}
+	doc, err := renderAll(docs, render.Options{
+		Width: 60, Theme: theme.Plain(), Images: images,
+	}, config{}, render.WriteOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Images) != 1 {
+		t.Fatalf("got %d placements, want 1", len(doc.Images))
+	}
+
+	img := doc.Images[0]
+	if img.Line == 0 {
+		t.Error("the placement was not shifted past the first document")
+	}
+	if img.Line+img.Rows > len(doc.Lines) {
+		t.Errorf("placement covers lines %d-%d but the document has %d",
+			img.Line, img.Line+img.Rows-1, len(doc.Lines))
+	}
+	// The rows it points at have to be the reserved blank ones.
+	if got := strings.TrimSpace(doc.Lines[img.Line+1].Text()); got != "" {
+		t.Errorf("line %d should be reserved for the image, got %q", img.Line+1, got)
+	}
+}
+
+// countingHandler is a stand-in image handler for layout tests.
+type countingHandler struct{ cols, rows int }
+
+func (c *countingHandler) Measure(string, int, int, render.SizeHint) (int, int, error) {
+	return c.cols, c.rows, nil
+}
+
+func (c *countingHandler) Encode(string, int, int, int) (string, error) { return "<img>", nil }

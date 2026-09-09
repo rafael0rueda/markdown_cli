@@ -26,6 +26,10 @@ type Run struct {
 	Link string
 }
 
+// NewRun makes an unstyled run, which is the convenient way to measure the
+// display width of a plain string.
+func NewRun(text string) Run { return Run{Text: text} }
+
 // Width is the number of terminal cells the run occupies.
 func (r Run) Width() int { return uniseg.StringWidth(r.Text) }
 
@@ -123,8 +127,16 @@ func (d *Doc) appendLine(runs ...Run) {
 
 // trimTrailingBlanks removes blank lines from the end of the document, so
 // output does not end in a run of empty rows.
+//
+// The rows an image occupies are blank by design - the picture is drawn over
+// them - so trimming stops before any of them. Without that, a document ending
+// in an image would have its placement point past the end of its own lines.
 func (d *Doc) trimTrailingBlanks() {
-	for len(d.Lines) > 0 {
+	floor := 0
+	for _, img := range d.Images {
+		floor = max(floor, img.Line+img.Rows)
+	}
+	for len(d.Lines) > floor {
 		last := d.Lines[len(d.Lines)-1]
 		if last.Fill.IsSet() || strings.TrimSpace(last.Text()) != "" {
 			return

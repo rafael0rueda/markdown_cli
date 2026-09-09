@@ -25,51 +25,85 @@ const (
 	transparent = -1
 )
 
-// encodeSixel renders an image as a sixel escape sequence.
+// sixelImage is an image reduced to a palette and ready to emit, repeatedly
+// and in pieces.
+//
+// Preparing and emitting are separated because the pager redraws on every
+// scroll step. The costly work - scaling, the median cut, and dithering -
+// depends only on the image, so it is done once; emitting a band of rows is
+// cheap and is all that has to happen per frame.
+type sixelImage struct {
+	width, height int
+	palette       [][3]uint8
+	indexed       []int
+}
+
+// prepareSixel does the expensive part: scale, quantize and dither.
+//
+// A nil result with no error means every pixel was transparent, so there is
+// nothing to draw.
+func prepareSixel(src *Source, geo Geometry) (*sixelImage, error) {
+	img := toRGBA(scaleTo(src.Image, geo.PixelWidth, geo.PixelHeight))
+	width, height := img.Bounds().Dx(), img.Bounds().Dy()
+	if width == 0 || height == 0 {
+		return nil, fmt.Errorf("image scaled to nothing")
+	}
+
+	palette := medianCut(img, sixelMaxColors)
+	if len(palette) == 0 {
+		return nil, nil
+	}
+	return &sixelImage{
+		width:   width,
+		height:  height,
+		palette: palette,
+		indexed: ditherToPalette(img, palette),
+	}, nil
+}
+
+// encode renders the pixel rows in [top, bottom) as a sixel sequence.
 //
 // Sixel encodes six vertical pixels per character, so the image is walked in
 // horizontal bands six rows tall. Within a band each color is drawn in its own
 // pass over the row, returning to the left margin between passes, because the
 // format can only select one color at a time.
-func encodeSixel(src *Source, geo Geometry) (string, error) {
-	img := toRGBA(scaleTo(src.Image, geo.PixelWidth, geo.PixelHeight))
-	width, height := img.Bounds().Dx(), img.Bounds().Dy()
-	if width == 0 || height == 0 {
-		return "", fmt.Errorf("image scaled to nothing")
+func (s *sixelImage) encode(top, bottom int) string {
+	top = max(top, 0)
+	bottom = min(bottom, s.height)
+	if s == nil || top >= bottom {
+		return ""
 	}
-
-	palette := medianCut(img, sixelMaxColors)
-	if len(palette) == 0 {
-		// Every pixel was transparent, so there is nothing to draw.
-		return "", nil
-	}
-	indexed := ditherToPalette(img, palette)
 
 	var b strings.Builder
 	// P2=1 leaves undrawn pixels showing whatever is behind them, which is how
 	// transparency is expressed; without it they would be painted black.
 	b.WriteString("\x1bP0;1;0q")
-	fmt.Fprintf(&b, `"1;1;%d;%d`, width, height)
+	fmt.Fprintf(&b, `"1;1;%d;%d`, s.width, bottom-top)
 
-	for i, c := range palette {
+	for i, c := range s.palette {
 		// Sixel color components are percentages, not bytes.
 		fmt.Fprintf(&b, "#%d;2;%d;%d;%d", i,
 			scaleToPercent(c[0]), scaleToPercent(c[1]), scaleToPercent(c[2]))
 	}
 
-	writeBands(&b, indexed, width, height, len(palette))
+	writeBands(&b, s.indexed, s.width, top, bottom, len(s.palette))
 
 	b.WriteString("\x1b\\")
-	return b.String(), nil
+	return b.String()
 }
 
-// writeBands emits the pixel data, one six-row band at a time.
-func writeBands(b *strings.Builder, indexed []int, width, height, colors int) {
+// writeBands emits the pixel rows in [first, last), one six-row band at a time.
+//
+// Bands are aligned to the crop rather than to the image, so a crop starting
+// part-way down an image still begins with a full band and the output is
+// self-contained.
+func writeBands(b *strings.Builder, indexed []int, width, first, last, colors int) {
 	// Reused across bands to keep this from allocating per band per color.
 	bits := make([]byte, width)
 	present := make([]bool, colors)
 
-	for top := 0; top < height; top += 6 {
+	height := last
+	for top := first; top < height; top += 6 {
 		for i := range present {
 			present[i] = false
 		}

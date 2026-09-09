@@ -24,6 +24,8 @@ and first-class support for [Obsidian](https://obsidian.md) vaults.
 - **Obsidian vaults** — `![[embeds]]`, `[[wikilinks]]` and YAML frontmatter.
 - **Adapts to your terminal** by asking it what it can do, rather than guessing
   from `TERM`.
+- **An interactive pager** — scroll, search, resize, with images that move with
+  the text.
 - **Safe to pipe.** Output to anything other than a terminal contains no escape
   sequences at all.
 - **Single static binary**, no runtime dependencies.
@@ -67,6 +69,7 @@ With no file, or with `-`, mdv reads markdown from standard input.
 | `-links` | `auto` | `inline` shows URLs, `hide` shows only link text |
 | `-images` | `auto` | `none`, `kitty`, `sixel` |
 | `-remote-images` | off | Fetch images over http |
+| `-pager` | `auto` | `auto`, `always`, `never` |
 | `-frontmatter` | `meta` | `meta`, `hide`, `raw` |
 | `-vault` | detect | Obsidian vault root |
 | `-no-vault` | off | Do not resolve `[[wikilinks]]` |
@@ -75,6 +78,28 @@ With no file, or with `-`, mdv reads markdown from standard input.
 | `-no-probe` | off | Never query the terminal; use the environment alone |
 | `-probe-timeout` | `300ms` | How long to wait for the terminal to answer |
 | `-version` | | Print version and exit |
+
+### The pager
+
+Run against a terminal, mdv opens an interactive pager. Redirect the output and
+it streams the document instead, so pipelines are unaffected. `-pager=never`
+turns it off.
+
+| Key | Does |
+|-----|------|
+| `j` `k`, `↓` `↑` | Scroll a line |
+| `d` `u` | Scroll half a screen |
+| `space` `b`, `PgDn` `PgUp` | Scroll a screen |
+| `g` `G`, `Home` `End` | Jump to the start or end |
+| `/` | Search; matches highlight as you type |
+| `n` `N` | Next and previous match |
+| `Esc` | Cancel the search prompt |
+| `q`, `Ctrl-C` | Quit |
+
+Resizing the window re-lays out the document, so wrapping, table widths and
+image sizes all follow. The scroll position is kept as a fraction rather than a
+line number, because re-wrapping changes how many lines there are and line 200
+of the old layout is not line 200 of the new one.
 
 ### Piping is safe
 
@@ -176,6 +201,17 @@ paragraph until a blank line, so a sentence followed by an embed on the next
 line is a *single* paragraph — and rendering it as one block would strand the
 picture mid-sentence.
 
+**Images are prepared once and drawn many times.** The costly work — decoding,
+scaling, and for sixel a median cut and a dither — depends only on the picture,
+not on where it sits. The pager redraws on every scroll step, so a kitty image
+is transmitted once and each frame afterwards is a short placement command
+rather than a fresh base64 copy of the file.
+
+**An image half off the screen is cropped, not skipped.** Scrolling through a
+picture is continuous rather than having it appear and disappear whole. The
+pager thinks in rows and the protocols think in pixels, so the row range is
+converted against the prepared height.
+
 ## Development
 
 ```sh
@@ -196,6 +232,11 @@ otherwise hard to check without a terminal:
   fake terminal answering on the other end. That covers raw mode, the read
   timeout, replies arriving in fragments, and restoring the terminal to its
   original state. Those tests are Linux-only and skip elsewhere.
+- **The pager is tested through a pseudo-terminal too**, with a small terminal
+  emulator interpreting what it draws. The pager positions the cursor rather
+  than writing a stream of text, so stripping the escape sequences would run
+  every row together; interpreting them into a grid lets the tests ask what is
+  actually on screen.
 
 ### Layout
 
@@ -206,14 +247,13 @@ internal/theme/     colors, styles, palettes, glyph sets
 internal/term/      terminal capability detection and probing
 internal/graphics/  decoding, scaling, and the kitty and sixel protocols
 internal/vault/     Obsidian vault detection and wikilink resolution
+internal/pager/     the interactive viewer
 docs/               screenshots and other documentation assets
 ```
 
 ## Status
 
-Working and usable. An interactive pager — scrolling, search, resize, with
-images redrawn as you move — is the next planned piece; for now, pipe to
-`less -R` for long documents.
+Working and usable.
 
 ## Prior art
 

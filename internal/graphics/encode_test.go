@@ -58,35 +58,48 @@ func TestEncodeKittyStructure(t *testing.T) {
 	src := loadTestImage(t, "gradient.png")
 	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 40, CellWidth: 9, CellHeight: 18})
 
-	out, err := encodeKitty(src, geo, 7)
+	img, err := prepareKitty(src, geo, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	controls, payload := parseKitty(t, out)
+	controls, payload := parseKitty(t, img.transmit())
 
 	first := controls[0]
 	for _, want := range []string{
-		"a=T",   // transmit and display
+		"a=t",   // transmit, without displaying
 		"f=100", // PNG
 		"t=d",   // data is inline, not a file path
 		"i=7",   // the identifier we asked for
-		"C=1",   // do not move the cursor
 		"q=2",   // no replies, which would land in the user's input
-		fmt.Sprintf("c=%d", geo.Cols),
-		fmt.Sprintf("r=%d", geo.Rows),
 	} {
 		if !strings.Contains(first, want) {
 			t.Errorf("control data %q is missing %q", first, want)
 		}
 	}
 
+	// Placement is a separate, much shorter command; it is what the pager
+	// repeats on every scroll step instead of resending the image.
+	placement := img.place(1, geo.Cols, geo.Rows, 0, img.pixelHeight)
+	for _, want := range []string{
+		"a=p", // put an already-transmitted image
+		"i=7",
+		"C=1", // do not move the cursor
+		"q=2",
+		fmt.Sprintf("c=%d", geo.Cols),
+		fmt.Sprintf("r=%d", geo.Rows),
+	} {
+		if !strings.Contains(placement, want) {
+			t.Errorf("placement %q is missing %q", placement, want)
+		}
+	}
+
 	// The payload must actually be a PNG the terminal can decode.
-	img, err := png.Decode(bytes.NewReader(payload))
+	decoded, err := png.Decode(bytes.NewReader(payload))
 	if err != nil {
 		t.Fatalf("payload is not a valid PNG: %v", err)
 	}
-	if img.Bounds().Dx() > src.Width {
-		t.Errorf("payload was enlarged to %d px", img.Bounds().Dx())
+	if decoded.Bounds().Dx() > src.Width {
+		t.Errorf("payload was enlarged to %d px", decoded.Bounds().Dx())
 	}
 }
 
@@ -97,10 +110,11 @@ func TestEncodeKittyChunking(t *testing.T) {
 	src := loadTestImage(t, "gradient.png")
 	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 200, CellWidth: 9, CellHeight: 18})
 
-	out, err := encodeKitty(src, geo, 1)
+	img, err := prepareKitty(src, geo, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
+	out := img.transmit()
 	controls, _ := parseKitty(t, out)
 	if len(controls) < 2 {
 		t.Fatalf("expected the image to need several chunks, got %d", len(controls))
@@ -117,7 +131,7 @@ func TestEncodeKittyChunking(t *testing.T) {
 		}
 		// Only the first chunk carries the image parameters; repeating them
 		// is not allowed by the protocol.
-		if i > 0 && strings.Contains(c, "a=T") {
+		if i > 0 && strings.Contains(c, "a=t") {
 			t.Errorf("chunk %d repeats the image parameters: %q", i, c)
 		}
 	}
@@ -137,11 +151,11 @@ func TestEncodeKittyPassesThroughSmallPNG(t *testing.T) {
 	src := loadTestImage(t, "alpha.png")
 	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 80, CellWidth: 9, CellHeight: 18})
 
-	out, err := encodeKitty(src, geo, 1)
+	img, err := prepareKitty(src, geo, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, payload := parseKitty(t, out)
+	_, payload := parseKitty(t, img.transmit())
 	if !bytes.Equal(payload, src.Data) {
 		t.Error("a small PNG was re-encoded instead of being sent as-is")
 	}
@@ -151,11 +165,11 @@ func TestEncodeKittyReencodesJPEG(t *testing.T) {
 	src := loadTestImage(t, "photo.jpg")
 	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 40, CellWidth: 9, CellHeight: 18})
 
-	out, err := encodeKitty(src, geo, 1)
+	img, err := prepareKitty(src, geo, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, payload := parseKitty(t, out)
+	_, payload := parseKitty(t, img.transmit())
 	// The protocol only accepts PNG among compressed formats, so a JPEG has
 	// to be converted rather than forwarded.
 	if _, err := png.Decode(bytes.NewReader(payload)); err != nil {
@@ -321,11 +335,11 @@ func TestEncodeSixelRoundTrip(t *testing.T) {
 			src := loadTestImage(t, name)
 			geo := Fit(src.Width, src.Height, Constraints{MaxCols: 40, CellWidth: 9, CellHeight: 18})
 
-			out, err := encodeSixel(src, geo)
+			img, err := prepareSixel(src, geo)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := decodeSixel(t, out)
+			got := decodeSixel(t, img.encode(0, img.height))
 
 			if got.Bounds().Dx() != geo.PixelWidth || got.Bounds().Dy() != geo.PixelHeight {
 				t.Fatalf("decoded %dx%d, want %dx%d",
@@ -346,11 +360,11 @@ func TestEncodeSixelTransparency(t *testing.T) {
 	src := loadTestImage(t, "alpha.png")
 	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 40, CellWidth: 9, CellHeight: 18})
 
-	out, err := encodeSixel(src, geo)
+	img, err := prepareSixel(src, geo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := decodeSixel(t, out)
+	got := decodeSixel(t, img.encode(0, img.height))
 
 	// The source is an opaque circle on a transparent field; the corners must
 	// have been left untouched and the centre painted.
@@ -369,12 +383,12 @@ func TestEncodeSixelFullyTransparent(t *testing.T) {
 	src := &Source{Image: blank, Width: 32, Height: 32, Format: "png"}
 	geo := Fit(32, 32, Constraints{MaxCols: 40, CellWidth: 9, CellHeight: 18})
 
-	out, err := encodeSixel(src, geo)
+	img, err := prepareSixel(src, geo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != "" {
-		t.Errorf("an entirely transparent image should encode to nothing, got %q", truncate(out))
+	if img != nil {
+		t.Errorf("an entirely transparent image should prepare to nothing, got %+v", img)
 	}
 }
 
@@ -382,10 +396,11 @@ func TestEncodeSixelPaletteBounded(t *testing.T) {
 	src := loadTestImage(t, "gradient.png")
 	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 60, CellWidth: 9, CellHeight: 18})
 
-	out, err := encodeSixel(src, geo)
+	img, err := prepareSixel(src, geo)
 	if err != nil {
 		t.Fatal(err)
 	}
+	out := img.encode(0, img.height)
 	defs := regexp.MustCompile(`#(\d+);2;`).FindAllStringSubmatch(out, -1)
 	if len(defs) == 0 {
 		t.Fatal("no palette entries defined")
@@ -482,4 +497,154 @@ func TestPlaceMovesPastTheImage(t *testing.T) {
 			t.Errorf("rows=%d: should end by moving back down: %q", rows, got)
 		}
 	}
+}
+
+// --- cropping ---
+
+// TestSixelCropRoundTrip checks that a band of an image encodes to exactly
+// that band. Cropping is what lets the pager scroll through an image instead
+// of having it appear and disappear whole.
+func TestSixelCropRoundTrip(t *testing.T) {
+	src := loadTestImage(t, "gradient.png")
+	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 40, CellWidth: 9, CellHeight: 18})
+
+	img, err := prepareSixel(src, geo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := decodeSixel(t, img.encode(0, img.height))
+
+	tests := []struct{ top, bottom int }{
+		{0, 6},
+		{6, 18},
+		{img.height / 2, img.height},
+		{img.height - 3, img.height},
+		{4, 5}, // a single row, not aligned to a band
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d-%d", tt.top, tt.bottom), func(t *testing.T) {
+			got := decodeSixel(t, img.encode(tt.top, tt.bottom))
+
+			wantHeight := tt.bottom - tt.top
+			if got.Bounds().Dy() != wantHeight {
+				t.Fatalf("decoded %d rows, want %d", got.Bounds().Dy(), wantHeight)
+			}
+			if got.Bounds().Dx() != img.width {
+				t.Errorf("decoded %d columns, want %d", got.Bounds().Dx(), img.width)
+			}
+
+			// The crop must hold the same pixels as that region of the whole
+			// image, shifted up to start at row zero.
+			for y := 0; y < wantHeight; y++ {
+				for x := 0; x < img.width; x++ {
+					if got.RGBAAt(x, y) != full.RGBAAt(x, tt.top+y) {
+						t.Fatalf("pixel (%d,%d) differs from row %d of the full image",
+							x, y, tt.top+y)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSixelCropDegenerateRanges(t *testing.T) {
+	src := loadTestImage(t, "alpha.png")
+	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 40, CellWidth: 9, CellHeight: 18})
+	img, err := prepareSixel(src, geo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ top, bottom int }{
+		{5, 5},                       // empty
+		{10, 2},                      // inverted
+		{img.height, img.height + 5}, // entirely past the end
+		{-5, 0},                      // entirely before the start
+	} {
+		if got := img.encode(tt.top, tt.bottom); got != "" {
+			t.Errorf("encode(%d, %d) should be empty, got %d bytes", tt.top, tt.bottom, len(got))
+		}
+	}
+	// A range running off the end is clamped rather than refused.
+	if got := img.encode(img.height-2, img.height+100); got == "" {
+		t.Error("a range overrunning the end should be clamped, not dropped")
+	}
+}
+
+// TestKittyCropKeys checks that a partial draw asks the terminal for the right
+// slice of the source image.
+func TestKittyCropKeys(t *testing.T) {
+	src := loadTestImage(t, "gradient.png")
+	geo := Fit(src.Width, src.Height, Constraints{MaxCols: 40, CellWidth: 9, CellHeight: 18})
+	img, err := prepareKitty(src, geo, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A full draw carries no crop at all, which keeps the common case short.
+	if got := img.place(1, geo.Cols, geo.Rows, 0, img.pixelHeight); strings.Contains(got, "y=") {
+		t.Errorf("a whole-image placement should not be cropped: %q", got)
+	}
+
+	partial := img.place(1, geo.Cols, 4, 20, 60)
+	for _, want := range []string{"y=20", "h=60", "r=4"} {
+		if !strings.Contains(partial, want) {
+			t.Errorf("placement %q is missing %q", partial, want)
+		}
+	}
+}
+
+// TestPreparedDrawCropsByRow covers the conversion the pager relies on: it
+// thinks in rows, the protocols think in pixels.
+func TestPreparedDrawCropsByRow(t *testing.T) {
+	r := testRenderer(Kitty)
+	prep, err := r.Prepare(filepath.Join("testdata", "gradient.png"), 20, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Skipping half the rows should skip about half the pixels.
+	out := prep.draw(5, 5)
+	y := regexpFind(out, `y=(\d+)`)
+	h := regexpFind(out, `h=(\d+)`)
+	if y == "" || h == "" {
+		t.Fatalf("no crop in a partial draw: %q", truncate(out))
+	}
+	yi, _ := strconv.Atoi(y)
+	hi, _ := strconv.Atoi(h)
+	half := prep.pixelHeight / 2
+	if abs(yi-half) > 2 || abs(hi-(prep.pixelHeight-half)) > 2 {
+		t.Errorf("crop y=%d h=%d, want roughly %d and %d", yi, hi, half, prep.pixelHeight-half)
+	}
+	if !strings.Contains(out, "r=5") {
+		t.Errorf("placement should occupy the 5 visible rows: %q", truncate(out))
+	}
+}
+
+func TestPreparedDrawOutOfRange(t *testing.T) {
+	r := testRenderer(Kitty)
+	prep, err := r.Prepare(filepath.Join("testdata", "alpha.png"), 8, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ skip, visible int }{
+		{4, 2},   // starts past the end
+		{0, 0},   // nothing visible
+		{10, 10}, // well past the end
+		{0, -1},  // negative
+	} {
+		if got := prep.draw(tt.skip, tt.visible); got != "" {
+			t.Errorf("draw(%d, %d) should be empty, got %q", tt.skip, tt.visible, truncate(got))
+		}
+	}
+	// More rows requested than exist is clamped to what there is.
+	if got := prep.draw(0, 100); !strings.Contains(got, "r=4") {
+		t.Errorf("an overlong draw should be clamped to 4 rows: %q", truncate(got))
+	}
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }

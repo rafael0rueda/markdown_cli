@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rafael0rueda/markdown_cli/internal/graphics"
+	"github.com/rafael0rueda/markdown_cli/internal/pager"
 	"github.com/rafael0rueda/markdown_cli/internal/render"
 	"github.com/rafael0rueda/markdown_cli/internal/term"
 	"github.com/rafael0rueda/markdown_cli/internal/theme"
@@ -41,6 +42,7 @@ type config struct {
 	vaultDir  string
 	noVault   bool
 	frontStr  string
+	pagerMode string
 }
 
 func main() {
@@ -69,6 +71,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs.StringVar(&cfg.vaultDir, "vault", "", "Obsidian vault root (default: found from the document)")
 	fs.BoolVar(&cfg.noVault, "no-vault", false, "do not resolve [[wikilinks]] against a vault")
 	fs.StringVar(&cfg.frontStr, "frontmatter", "meta", "YAML frontmatter: meta, hide, raw")
+	fs.StringVar(&cfg.pagerMode, "pager", "auto", "interactive pager: auto, always, never")
 	fs.BoolVar(&cfg.showCaps, "caps", false, "report what the terminal supports and exit")
 	fs.BoolVar(&cfg.noProbe, "no-probe", false, "do not query the terminal; use the environment alone")
 	fs.DurationVar(&cfg.probeWait, "probe-timeout", term.DefaultProbeTimeout, "how long to wait for the terminal to answer")
@@ -154,37 +157,99 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if len(inputs) == 0 {
 		inputs = []string{"-"}
 	}
-	for i, name := range inputs {
-		source, baseDir, err := readInput(name)
-		if err != nil {
-			return err
-		}
-		if len(inputs) > 1 {
-			if i > 0 {
-				fmt.Fprintln(stdout)
-			}
-			if err := writeFileHeader(stdout, name, width, th, writeOpts); err != nil {
-				return err
-			}
-		}
-		doc, err := render.Render(source, render.Options{
-			Width:        width,
+
+	docs, err := loadInputs(inputs)
+	if err != nil {
+		return err
+	}
+
+	// build lays the whole session out at a given width. The pager calls it
+	// again on every resize, and the streaming path calls it once.
+	build := func(w int) (*render.Doc, error) {
+		return renderAll(docs, render.Options{
+			Width:        w,
 			Theme:        th,
 			LinkMode:     linkMode,
-			BaseDir:      baseDir,
 			Images:       imageHandler,
 			MaxImageRows: maxImageRows(caps),
 			Frontmatter:  frontMode,
-			Links:        resolveVault(cfg, name, baseDir),
-		})
-		if err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		if err := render.Write(stdout, doc, writeOpts); err != nil {
+		}, cfg, writeOpts)
+	}
+
+	if usePager(cfg.pagerMode, caps, out) {
+		err := runPager(build, caps, th, writeOpts, imageHandler, docs)
+		// Not having a terminal to draw on is a reason to write the document
+		// out instead, not a reason to fail - unless paging was asked for
+		// explicitly, in which case silently doing something else would be
+		// the wrong answer.
+		if err == nil || !errors.Is(err, pager.ErrNoTerminal) || pagerRequired(cfg.pagerMode) {
 			return err
 		}
 	}
-	return nil
+
+	doc, err := build(width)
+	if err != nil {
+		return err
+	}
+	return render.Write(stdout, doc, writeOpts)
+}
+
+// document is one input, loaded and ready to render.
+type document struct {
+	name    string
+	source  []byte
+	baseDir string
+}
+
+// loadInputs reads every input up front.
+//
+// The pager needs to re-render on resize, so the sources have to outlive the
+// first pass; reading them once also means a document arriving on stdin can be
+// laid out repeatedly.
+func loadInputs(names []string) ([]document, error) {
+	docs := make([]document, 0, len(names))
+	for _, name := range names {
+		source, baseDir, err := readInput(name)
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, document{name: name, source: source, baseDir: baseDir})
+	}
+	return docs, nil
+}
+
+// renderAll lays every input out into a single document, labelling them when
+// there is more than one.
+func renderAll(docs []document, opts render.Options, cfg config, writeOpts render.WriteOptions) (*render.Doc, error) {
+	combined := &render.Doc{Width: opts.Width}
+
+	for i, d := range docs {
+		if len(docs) > 1 {
+			if i > 0 {
+				combined.Lines = append(combined.Lines, render.Line{})
+			}
+			combined.Lines = append(combined.Lines, fileHeader(d.name, opts.Width, opts.Theme))
+		}
+
+		docOpts := opts
+		docOpts.BaseDir = d.baseDir
+		docOpts.Links = resolveVault(cfg, d.name, d.baseDir)
+
+		doc, err := render.Render(d.source, docOpts)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", d.name, err)
+		}
+
+		// Image placements are line-numbered, so they have to be shifted onto
+		// their position within the combined document.
+		offset := len(combined.Lines)
+		for _, img := range doc.Images {
+			img.Line += offset
+			combined.Images = append(combined.Images, img)
+		}
+		combined.Lines = append(combined.Lines, doc.Lines...)
+	}
+	return combined, nil
 }
 
 // readInput loads a document and reports the directory its relative links
@@ -210,20 +275,67 @@ func readInput(name string) (source []byte, baseDir string, err error) {
 	return b, filepath.Dir(abs), nil
 }
 
-// writeFileHeader labels a document when more than one was given.
-func writeFileHeader(w io.Writer, name string, width int, th *theme.Theme, opts render.WriteOptions) error {
+// fileHeader labels a document when more than one was given.
+func fileHeader(name string, width int, th *theme.Theme) render.Line {
 	label := " " + name + " "
-	rule := width - len(label) - 1
+	rule := width - render.NewRun(label).Width() - 1
 	if rule < 0 {
 		rule = 0
 	}
-	line := render.Line{Runs: []render.Run{
+	return render.Line{Runs: []render.Run{
 		{Text: th.Glyphs.Rule, Style: th.Rule},
 		{Text: label, Style: th.Headings[0]},
 		{Text: strings.Repeat(th.Glyphs.Rule, rule), Style: th.Rule},
 	}}
-	_, err := fmt.Fprintln(w, render.RenderLine(line, width, opts))
-	return err
+}
+
+// usePager decides whether to page rather than stream.
+//
+// Paging needs a terminal to draw on, so it is off whenever output is
+// redirected - which also keeps piping into another program working.
+func usePager(mode string, caps term.Caps, out *os.File) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "never", "off", "no":
+		return false
+	case "always", "yes":
+		return true
+	}
+	return caps.TTY
+}
+
+// pagerRequired reports whether the user insisted on paging.
+func pagerRequired(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "always", "yes":
+		return true
+	}
+	return false
+}
+
+// runPager displays the document interactively.
+func runPager(build pager.Renderer, caps term.Caps, th *theme.Theme,
+	writeOpts render.WriteOptions, images render.ImageHandler, docs []document) error {
+
+	title := "mdv"
+	if len(docs) == 1 && docs[0].name != "-" {
+		title = filepath.Base(docs[0].name)
+	} else if len(docs) > 1 {
+		title = fmt.Sprintf("%d documents", len(docs))
+	}
+
+	// The pager needs to draw parts of images, which the streaming interface
+	// cannot express; only the graphics renderer can do it.
+	drawer, _ := images.(pager.ImageDrawer)
+
+	return pager.Run(pager.Options{
+		Render:        build,
+		Write:         writeOpts,
+		Images:        drawer,
+		Theme:         th,
+		Title:         title,
+		MaxWidth:      maxAutoWidth,
+		KittyKeyboard: caps.KittyKeyboard,
+	})
 }
 
 // resolveColor turns the --color flag into a mode, deferring to the detected

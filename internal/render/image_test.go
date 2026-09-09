@@ -294,3 +294,31 @@ func TestWriteLineCountIsStable(t *testing.T) {
 		t.Errorf("drawn output has %d lines, plain has %d; they must agree", a, b)
 	}
 }
+
+// TestImageAtEndKeepsItsRows guards the interaction between reserving rows for
+// a picture and trimming blank lines off the end of a document. The reserved
+// rows are blank on purpose, so trimming them would leave the placement
+// pointing past the end of the document it belongs to.
+func TestImageAtEndKeepsItsRows(t *testing.T) {
+	h := &fakeImages{cols: 10, rows: 5}
+	doc := renderWithImages(t, "Some text.\n\n![alt](pic.png)\n", h)
+
+	if len(doc.Images) != 1 {
+		t.Fatalf("got %d placements, want 1", len(doc.Images))
+	}
+	img := doc.Images[0]
+	if got := img.Line + img.Rows; got > len(doc.Lines) {
+		t.Errorf("placement covers lines %d-%d but the document has %d",
+			img.Line, img.Line+img.Rows-1, len(doc.Lines))
+	}
+}
+
+func TestTrailingBlanksStillTrimmed(t *testing.T) {
+	doc := renderWithImages(t, "Text.\n\n\n\n", nil)
+	if len(doc.Lines) == 0 {
+		t.Fatal("everything was trimmed")
+	}
+	if last := doc.Lines[len(doc.Lines)-1].Text(); strings.TrimSpace(last) == "" {
+		t.Errorf("the document still ends with a blank line: %q", last)
+	}
+}
