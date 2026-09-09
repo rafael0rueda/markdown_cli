@@ -7,43 +7,10 @@ first, and it degrades cleanly everywhere else.
 $ mdv README.md
 ```
 
+![mdv rendering its own README in kitty](docs/mdv_example.png)
+
 Syntax-highlighted code, box-drawn tables, real inline images, clickable links,
 and first-class support for [Obsidian](https://obsidian.md) vaults.
-
-```
-# mdv Demo Document
-
-A paragraph with emphasis, strong, both, inline code, struck through
-and a link to example (https://example.com/page).
-
-## Lists
-
-• First bullet
-• Second bullet with a much longer body that should wrap cleanly
-  across several lines to prove the wrapper honours the hanging
-  indent.
-  ◦ Nested bullet
-    ▸ Deeper still
-• ☐ An unchecked task
-• ☑ A completed task
-
-## Quote
-
-▌ A blockquote that runs long enough to wrap, so the bar on the left
-▌ has to be repeated on every single line of the output.
-
-## Table
-
-┌──────────┬─────────┬────────────────────────────┐
-│ Language │ Typing  │                      Notes │
-├──────────┼─────────┼────────────────────────────┤
-│ Go       │ static  │ Fast builds, single binary │
-│ Python   │ dynamic │         Batteries included │
-└──────────┴─────────┴────────────────────────────┘
-```
-
-*(Shown without color. In a real terminal the headings, code and table are
-themed, and images are drawn as pictures rather than alt text.)*
 
 ## Features
 
@@ -239,6 +206,7 @@ internal/theme/     colors, styles, palettes, glyph sets
 internal/term/      terminal capability detection and probing
 internal/graphics/  decoding, scaling, and the kitty and sixel protocols
 internal/vault/     Obsidian vault detection and wikilink resolution
+docs/               screenshots and other documentation assets
 ```
 
 ## Status
