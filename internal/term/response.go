@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // Control characters that introduce and terminate the escape sequences a

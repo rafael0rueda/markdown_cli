@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // fakeImages stands in for the graphics package so the renderer can be tested

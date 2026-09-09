@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"mdv/internal/render"
+	"github.com/rafael0rueda/markdown_cli/internal/render"
 )
 
 // regexpFind returns the first capture group of pattern in s, or "".

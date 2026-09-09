@@ -9,7 +9,7 @@ import (
 	"github.com/rivo/uniseg"
 	"github.com/yuin/goldmark/text"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // codeIndent is the left padding inside a code block's background.

@@ -13,7 +13,7 @@ import (
 
 	xterm "golang.org/x/term"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // IsTerminal reports whether f is attached to a terminal.

@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // WriteOptions controls serialization of a Doc to a terminal or a pipe.

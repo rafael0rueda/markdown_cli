@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // terminalEnvVars is every variable the identification logic consults. Tests

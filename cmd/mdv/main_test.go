@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"mdv/internal/graphics"
-	"mdv/internal/render"
-	"mdv/internal/term"
+	"github.com/rafael0rueda/markdown_cli/internal/graphics"
+	"github.com/rafael0rueda/markdown_cli/internal/render"
+	"github.com/rafael0rueda/markdown_cli/internal/term"
 )
 
 // runCLI invokes the command with a clean environment and captures its output.

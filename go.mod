@@ -1,4 +1,4 @@
-module mdv
+module github.com/rafael0rueda/markdown_cli
 
 go 1.25
 

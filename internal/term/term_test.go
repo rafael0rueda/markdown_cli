@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 func TestDetectColorRespectsNoColor(t *testing.T) {

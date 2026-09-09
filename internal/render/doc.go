@@ -14,7 +14,7 @@ import (
 
 	"github.com/rivo/uniseg"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // Run is a maximal stretch of text sharing one style.

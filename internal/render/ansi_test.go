@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 func renderToString(t *testing.T, doc *Doc, opts WriteOptions) string {

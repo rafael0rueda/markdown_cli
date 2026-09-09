@@ -3,7 +3,7 @@ package term
 import (
 	"testing"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // Replies as real terminals send them, used to build test inputs.

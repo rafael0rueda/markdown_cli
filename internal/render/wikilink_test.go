@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // stubLinks resolves any target that appears in its map.

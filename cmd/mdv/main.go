@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"mdv/internal/graphics"
-	"mdv/internal/render"
-	"mdv/internal/term"
-	"mdv/internal/theme"
-	"mdv/internal/vault"
+	"github.com/rafael0rueda/markdown_cli/internal/graphics"
+	"github.com/rafael0rueda/markdown_cli/internal/render"
+	"github.com/rafael0rueda/markdown_cli/internal/term"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/vault"
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".

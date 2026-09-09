@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // update rewrites the golden files instead of comparing against them:

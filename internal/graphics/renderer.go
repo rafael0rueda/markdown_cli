@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"mdv/internal/render"
+	"github.com/rafael0rueda/markdown_cli/internal/render"
 )
 
 // Protocol is how images are drawn.

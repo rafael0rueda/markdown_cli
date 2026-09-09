@@ -6,7 +6,7 @@ import (
 
 	"github.com/rivo/uniseg"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 func plainRuns(texts ...string) []Run {

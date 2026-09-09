@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"mdv/internal/theme"
+	"github.com/rafael0rueda/markdown_cli/internal/theme"
 )
 
 // Caps is what the attached terminal can do.
