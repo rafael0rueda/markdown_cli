@@ -56,6 +56,9 @@ With no file, or with `-`, mdv reads from standard input.
 | `-ascii` | off | ASCII instead of Unicode box drawing |
 | `-images` | `auto` | `none`, `kitty`, `sixel` |
 | `-remote-images` | off | Fetch images over http |
+| `-frontmatter` | `meta` | `meta`, `hide`, `raw` |
+| `-vault` | detect | Obsidian vault root |
+| `-no-vault` | off | Do not resolve `[[wikilinks]]` |
 | `-caps` | | Report what the terminal supports, and exit |
 | `-no-probe` | off | Never query the terminal; use the environment alone |
 | `-probe-timeout` | `300ms` | How long to wait for the terminal to answer |
@@ -118,6 +121,52 @@ Some details that took care to get right:
   image has to be scaled, reduced with a median cut and dithered before it can
   be sent. The same picture is typically five times larger on the wire.
 
+## Obsidian vaults
+
+mdv reads Obsidian notes without any setup. If a document has a `.obsidian`
+directory in one of its parent folders, that folder is treated as a vault and
+the Obsidian syntax that plain markdown does not understand starts working:
+
+| Syntax | Rendered as |
+|--------|-------------|
+| `![[image.png]]` | An inline picture |
+| `![[image.png\|300]]` | The same, capped at 300 pixels wide |
+| `[[Some Note]]` | A clickable link to the note's file |
+| `[[Some Note\|alias]]` | The same, labelled `alias` |
+| `[[Some Note#Section]]` | Labelled `Some Note > Section` |
+
+**Embed targets are resolved the way Obsidian resolves them**, which is why
+this needs the vault rather than just the document: the folder Obsidian files
+pasted images into is `attachmentFolderPath` in `.obsidian/app.json`, and a
+bare `![[Pasted image 01.png]]` means "find this in the vault", not "look next
+to this note". mdv checks the attachment folder, then the note's own folder,
+then the vault root, then searches the vault by name, preferring the shallowest
+match.
+
+**A link that resolves to nothing still shows its label.** Pointing at a note
+you have not written yet is a normal thing to do in a vault, and a broken
+attachment should not take the rest of the note down with it.
+
+YAML frontmatter becomes a compact aligned header rather than the two
+horizontal rules and stray bullet list that plain markdown makes of it. Use
+`-frontmatter=hide` to drop it or `-frontmatter=raw` to see what a plain
+renderer would have done.
+
+One subtlety worth knowing, because it decides where pictures land: markdown
+runs a paragraph until a blank line, so this is a *single* paragraph —
+
+```markdown
+With a 's' in the group execute position.
+![[diagram.png]]
+```
+
+— and rendering it as one block would strand the picture mid-sentence. mdv
+splits a paragraph at any image sitting alone on its own source line, so the
+text wraps as prose and the image becomes a block, which is what the document
+means and what Obsidian shows. An image *inside* a sentence still stays as alt
+text, for the same reason as before: it cannot be drawn without overwriting the
+words beside it.
+
 ## How capability detection works
 
 `mdv -caps` shows what was found, and whether it was measured or guessed. It is
@@ -164,6 +213,7 @@ internal/theme/   colors, styles, palettes, glyph sets
 internal/term/    terminal capability detection and probing
 internal/render/  markdown -> a line-addressed document of styled runs
 internal/graphics/ decoding, scaling, and the kitty and sixel protocols
+internal/vault/   Obsidian vault detection and wikilink resolution
 ```
 
 The renderer does not produce a string. It produces a `Doc`: a flat slice of

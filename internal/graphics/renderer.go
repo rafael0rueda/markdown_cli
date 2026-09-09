@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"mdv/internal/render"
 )
 
 // Protocol is how images are drawn.
@@ -100,7 +102,7 @@ func (r *Renderer) Enabled() bool {
 // An error means the image cannot be drawn - it is missing, or in a format
 // that cannot be decoded - and the caller should fall back to showing the alt
 // text. That is a normal outcome, not a failure of the render.
-func (r *Renderer) Measure(ref string, maxCols, maxRows int) (cols, rows int, err error) {
+func (r *Renderer) Measure(ref string, maxCols, maxRows int, hint render.SizeHint) (cols, rows int, err error) {
 	if !r.Enabled() {
 		return 0, 0, errors.New("images are disabled")
 	}
@@ -108,6 +110,7 @@ func (r *Renderer) Measure(ref string, maxCols, maxRows int) (cols, rows int, er
 	if err != nil {
 		return 0, 0, err
 	}
+	maxCols, maxRows = r.applyHint(maxCols, maxRows, hint)
 	geo := r.fit(src, maxCols, maxRows)
 	if geo.Cols < 1 || geo.Rows < 1 {
 		return 0, 0, errors.New("image is too small to draw")
@@ -149,6 +152,26 @@ func (r *Renderer) Encode(ref string, cols, rows, indent int) (string, error) {
 		return "", errors.New("image encoded to nothing")
 	}
 	return place(payload, rows, indent), nil
+}
+
+// applyHint narrows the box to a size the document asked for.
+//
+// A hint only ever shrinks the result. Honouring a request for 800 pixels in a
+// 40-column terminal would push the image off the right edge, and the document
+// author had no way to know how wide the reader's window is.
+func (r *Renderer) applyHint(maxCols, maxRows int, hint render.SizeHint) (int, int) {
+	cellW, cellH := Constraints{CellWidth: r.CellWidth, CellHeight: r.CellHeight}.cellSize()
+	if hint.Width > 0 {
+		if cols := ceilDiv(hint.Width, cellW); cols < maxCols {
+			maxCols = cols
+		}
+	}
+	if hint.Height > 0 {
+		if rows := ceilDiv(hint.Height, cellH); maxRows <= 0 || rows < maxRows {
+			maxRows = rows
+		}
+	}
+	return maxCols, maxRows
 }
 
 // fit computes the geometry for an image within the given box.

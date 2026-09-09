@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"mdv/internal/render"
 )
 
 // regexpFind returns the first capture group of pattern in s, or "".
@@ -58,7 +60,7 @@ func TestParseProtocol(t *testing.T) {
 
 func TestRendererMeasure(t *testing.T) {
 	r := testRenderer(Kitty)
-	cols, rows, err := r.Measure(filepath.Join("testdata", "gradient.png"), 40, 30)
+	cols, rows, err := r.Measure(filepath.Join("testdata", "gradient.png"), 40, 30, render.SizeHint{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +73,7 @@ func TestRendererMeasure(t *testing.T) {
 // be reported as an error the caller can turn into alt text, not a panic.
 func TestRendererMeasureFailsSoftly(t *testing.T) {
 	r := testRenderer(Kitty)
-	if _, _, err := r.Measure(filepath.Join("testdata", "does-not-exist.png"), 40, 30); err == nil {
+	if _, _, err := r.Measure(filepath.Join("testdata", "does-not-exist.png"), 40, 30, render.SizeHint{}); err == nil {
 		t.Error("expected an error for a missing image")
 	}
 }
@@ -85,7 +87,7 @@ func TestRendererDisabled(t *testing.T) {
 		if r.Enabled() {
 			t.Errorf("%+v should not be enabled", r)
 		}
-		if _, _, err := r.Measure("x.png", 10, 10); err == nil {
+		if _, _, err := r.Measure("x.png", 10, 10, render.SizeHint{}); err == nil {
 			t.Error("a disabled renderer should refuse to measure")
 		}
 		if _, err := r.Encode("x.png", 4, 2, 0); err == nil {
@@ -103,7 +105,7 @@ func TestEncodeMatchesMeasure(t *testing.T) {
 				r := testRenderer(protocol)
 				ref := filepath.Join("testdata", name)
 
-				cols, rows, err := r.Measure(ref, 40, 20)
+				cols, rows, err := r.Measure(ref, 40, 20, render.SizeHint{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -129,7 +131,7 @@ func TestEncodeKittyCarriesFootprint(t *testing.T) {
 	r := testRenderer(Kitty)
 	ref := filepath.Join("testdata", "gradient.png")
 
-	cols, rows, err := r.Measure(ref, 30, 20)
+	cols, rows, err := r.Measure(ref, 30, 20, render.SizeHint{})
 	if err != nil {
 		t.Fatal(err)
 	}

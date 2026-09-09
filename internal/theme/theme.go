@@ -123,6 +123,11 @@ type Theme struct {
 	ImageAlt Style
 	HTML     Style
 	Footnote Style
+
+	// MetaKey and MetaValue style the compact header rendered from a
+	// document's YAML frontmatter.
+	MetaKey   Style
+	MetaValue Style
 }
 
 // Catppuccin Mocha, used for the dark theme.
@@ -210,6 +215,9 @@ func Dark() *Theme {
 		ImageAlt: Style{FG: mochaPink},
 		HTML:     Style{FG: mochaOverlay0, Faint: true},
 		Footnote: Style{FG: mochaSky},
+
+		MetaKey:   Style{FG: mochaOverlay1},
+		MetaValue: Style{FG: mochaSubtext0},
 	}
 }
 
@@ -258,6 +266,9 @@ func Light() *Theme {
 		ImageAlt: Style{FG: lattePink},
 		HTML:     Style{FG: latteOverlay0, Faint: true},
 		Footnote: Style{FG: latteSky},
+
+		MetaKey:   Style{FG: latteOverlay1},
+		MetaValue: Style{FG: latteSubtext0},
 	}
 }
 
@@ -274,6 +285,7 @@ func Plain() *Theme {
 		Strong:      Style{Bold: true},
 		Strike:      Style{Strike: true},
 		Link:        Style{Underline: true},
+		MetaKey:     Style{Faint: true},
 	}
 	for i := range t.Headings {
 		t.Headings[i] = Style{Bold: true}

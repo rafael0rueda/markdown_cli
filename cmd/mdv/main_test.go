@@ -369,3 +369,153 @@ func TestRunPipedOutputHasNoImages(t *testing.T) {
 		t.Errorf("alt text missing: %q", out)
 	}
 }
+
+// buildTestVault writes a minimal Obsidian vault and returns its root.
+func buildTestVault(t *testing.T, attachmentDir string, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".obsidian"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := `{"attachmentFolderPath":"` + attachmentDir + `"}`
+	if err := os.WriteFile(filepath.Join(root, ".obsidian", "app.json"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for rel, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func TestRunResolvesWikilinksInAVault(t *testing.T) {
+	root := buildTestVault(t, "Assets", map[string]string{
+		"notes/note.md":       "See [[Other Note]] and ![[pic.png]].\n",
+		"notes/Other Note.md": "hi",
+		"Assets/pic.png":      "not really a png",
+	})
+
+	out, _, err := runCLI(t, "--width", "100", filepath.Join(root, "notes", "note.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "[[") {
+		t.Errorf("raw wikilink syntax reached the output:\n%s", out)
+	}
+	if !strings.Contains(out, "Other Note") || !strings.Contains(out, "pic.png") {
+		t.Errorf("wikilink labels missing:\n%s", out)
+	}
+	// The embed target has to resolve through the configured attachment
+	// folder, which is the whole reason for reading the vault config.
+	if !strings.Contains(out, filepath.Join("Assets", "pic.png")) {
+		t.Errorf("embed did not resolve to the attachment folder:\n%s", out)
+	}
+}
+
+func TestRunNoVault(t *testing.T) {
+	root := buildTestVault(t, "Assets", map[string]string{
+		"note.md":        "![[pic.png]]\n",
+		"Assets/pic.png": "x",
+	})
+
+	out, _, err := runCLI(t, "--no-vault", filepath.Join(root, "note.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "Assets") {
+		t.Errorf("--no-vault still resolved the embed:\n%s", out)
+	}
+	// The label is still worth showing even with resolution turned off.
+	if !strings.Contains(out, "pic.png") {
+		t.Errorf("label missing:\n%s", out)
+	}
+}
+
+func TestRunExplicitVault(t *testing.T) {
+	root := buildTestVault(t, "Assets", map[string]string{"Assets/pic.png": "x"})
+
+	// A note outside the vault, pointed at it explicitly.
+	outside := t.TempDir()
+	note := filepath.Join(outside, "note.md")
+	os.WriteFile(note, []byte("![[pic.png]]\n"), 0o644)
+
+	out, _, err := runCLI(t, "--width", "100", "--vault", root, note)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, filepath.Join("Assets", "pic.png")) {
+		t.Errorf("--vault was not used:\n%s", out)
+	}
+}
+
+func TestRunOutsideAVault(t *testing.T) {
+	dir := t.TempDir()
+	note := filepath.Join(dir, "note.md")
+	os.WriteFile(note, []byte("See [[Some Note]].\n"), 0o644)
+
+	out, _, err := runCLI(t, note)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "[[") {
+		t.Errorf("raw syntax leaked outside a vault:\n%s", out)
+	}
+	if !strings.Contains(out, "Some Note") {
+		t.Errorf("label missing:\n%s", out)
+	}
+}
+
+func TestRunFrontmatterModes(t *testing.T) {
+	dir := t.TempDir()
+	note := filepath.Join(dir, "note.md")
+	os.WriteFile(note, []byte("---\ntags:\n  - alpha\n---\n\n# Heading\n"), 0o644)
+
+	tests := map[string]bool{"meta": true, "hide": false}
+	for mode, wantTags := range tests {
+		out, _, err := runCLI(t, "--frontmatter", mode, note)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out, "alpha"); got != wantTags {
+			t.Errorf("--frontmatter=%s: tags present = %v, want %v\n%s", mode, got, wantTags, out)
+		}
+		if !strings.Contains(out, "Heading") {
+			t.Errorf("--frontmatter=%s: body lost\n%s", mode, out)
+		}
+	}
+
+	if _, _, err := runCLI(t, "--frontmatter", "yaml", note); err == nil {
+		t.Error("an unknown frontmatter mode should be rejected")
+	}
+}
+
+// TestRunStdinHasNoVault checks that markdown arriving on stdin, which has no
+// location on disk, does not have wikilinks resolved against some unrelated
+// vault near the working directory.
+func TestRunStdinHasNoVault(t *testing.T) {
+	old := os.Stdin
+	defer func() { os.Stdin = old }()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		io.WriteString(w, "See [[Some Note]].\n")
+		w.Close()
+	}()
+	os.Stdin = r
+
+	out, _, err := runCLI(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Some Note") {
+		t.Errorf("label missing: %q", out)
+	}
+}

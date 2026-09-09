@@ -27,8 +27,13 @@ type Options struct {
 	BaseDir string
 	// Images draws pictures. Nil shows alt text instead.
 	Images ImageHandler
+	// Links resolves Obsidian-style wikilinks. Nil renders them as plain
+	// text, which is what a document outside a vault should get.
+	Links LinkResolver
 	// MaxImageRows caps how tall any single image may be. Zero uses a default.
 	MaxImageRows int
+	// Frontmatter selects how a leading YAML block is shown.
+	Frontmatter FrontmatterMode
 }
 
 // LinkMode selects how a link's destination is presented.
@@ -74,7 +79,24 @@ func Render(source []byte, opts Options) (*Doc, error) {
 		opts.Width = 20
 	}
 
-	md := goldmark.New(goldmark.WithExtensions(extension.GFM, extension.Footnote))
+	// Frontmatter is separated before parsing rather than after. CommonMark
+	// has no concept of it, so leaving it in the source makes the opening
+	// delimiter a horizontal rule and the properties a stray list.
+	var entries []metaEntry
+	if opts.Frontmatter != FrontmatterRaw {
+		if meta, body, ok := splitFrontmatter(source); ok {
+			source = body
+			if opts.Frontmatter == FrontmatterMeta {
+				entries = parseFrontmatter(meta)
+			}
+		}
+	}
+
+	md := goldmark.New(goldmark.WithExtensions(
+		extension.GFM,
+		extension.Footnote,
+		wikilinkExtension{},
+	))
 	root := md.Parser().Parse(text.NewReader(source))
 
 	r := &renderer{
@@ -82,6 +104,10 @@ func Render(source []byte, opts Options) (*Doc, error) {
 		th:   opts.Theme,
 		opts: opts,
 		doc:  &Doc{Width: opts.Width},
+	}
+	if len(entries) > 0 {
+		r.frontmatter(entries)
+		r.blank()
 	}
 	r.renderChildren(root, false)
 	r.doc.trimTrailingBlanks()
@@ -186,15 +212,9 @@ func (r *renderer) renderBlock(n ast.Node) {
 	case *ast.Heading:
 		r.heading(n)
 	case *ast.Paragraph:
-		if r.blockImage(n) {
-			return
-		}
-		r.emit(r.inlineChildren(n, r.base, ""))
+		r.inlineBlock(n)
 	case *ast.TextBlock:
-		if r.blockImage(n) {
-			return
-		}
-		r.emit(r.inlineChildren(n, r.base, ""))
+		r.inlineBlock(n)
 	case *ast.Blockquote:
 		r.blockquote(n)
 	case *ast.List:
@@ -347,6 +367,36 @@ func (r *renderer) footnote(n *extast.Footnote) {
 	r.withPrefix(marker, indent, theme.Style{}, func() {
 		r.renderChildren(n, true)
 	})
+}
+
+// LinkResolver turns a wikilink target into a path on disk.
+//
+// Obsidian links name a file rather than giving its location, so resolving one
+// needs to know where the vault is and where it keeps attachments. That is not
+// this package's concern, so it arrives through this interface.
+type LinkResolver interface {
+	// ResolveEmbed locates the target of an ![[...]] embed.
+	ResolveEmbed(target string) (path string, ok bool)
+	// ResolveNote locates the target of a [[...]] link, supplying the .md
+	// extension that Obsidian leaves off.
+	ResolveNote(target string) (path string, ok bool)
+}
+
+// resolveEmbed locates an embed target, reporting failure when there is no
+// resolver or the file cannot be found.
+func (r *renderer) resolveEmbed(target string) (string, bool) {
+	if r.opts.Links == nil || target == "" {
+		return "", false
+	}
+	return r.opts.Links.ResolveEmbed(target)
+}
+
+// resolveNote locates a link target.
+func (r *renderer) resolveNote(target string) (string, bool) {
+	if r.opts.Links == nil || target == "" {
+		return "", false
+	}
+	return r.opts.Links.ResolveNote(target)
 }
 
 // uniWidth is a shorthand for the display width of a plain string.

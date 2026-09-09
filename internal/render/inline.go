@@ -23,6 +23,17 @@ func (r *renderer) inlineChildren(n ast.Node, base theme.Style, link string) []R
 	return out
 }
 
+// inlineNodes renders an explicit list of inline nodes. Splitting a paragraph
+// around a standalone image leaves runs of siblings that are no longer a
+// single node's children.
+func (r *renderer) inlineNodes(nodes []ast.Node, base theme.Style, link string) []Run {
+	var out []Run
+	for _, n := range nodes {
+		out = append(out, r.inline(n, base, link)...)
+	}
+	return out
+}
+
 func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 	th := r.th
 
@@ -97,6 +108,9 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 		}
 		return []Run{{Text: b.String(), Style: base.Merge(th.HTML), Link: link}}
 
+	case *Wikilink:
+		return r.wikilink(n, base)
+
 	case *extast.TaskCheckBox:
 		style, glyph := th.TaskTodo, th.Glyphs.TaskTodo
 		if n.IsChecked {
@@ -121,6 +135,41 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 		}
 		return nil
 	}
+}
+
+// wikilink renders an Obsidian [[link]] or an ![[embed]] that could not be
+// drawn as a picture.
+//
+// An unresolved link still shows its label rather than vanishing: a link to a
+// note that has not been written yet is a normal thing to have in a vault, and
+// the reader wants to see the name.
+func (r *renderer) wikilink(n *Wikilink, base theme.Style) []Run {
+	th := r.th
+	label := n.Label()
+
+	if n.Embed {
+		// Reaching here means the picture could not be drawn, so it is shown
+		// the way any other undrawable image is.
+		icon := th.Glyphs.ImageIcon
+		if icon != "" {
+			icon += " "
+		}
+		style := base.Merge(th.ImageAlt)
+		path, ok := r.resolveEmbed(n.Target)
+		if !ok {
+			return []Run{{Text: icon + label, Style: style}}
+		}
+		runs := []Run{{Text: icon + label, Style: style, Link: path}}
+		return append(runs, r.linkSuffix(path, base)...)
+	}
+
+	path, ok := r.resolveNote(n.Target)
+	if !ok {
+		// Nothing to point at, so it is styled as a link but is not one.
+		return []Run{{Text: label, Style: base.Merge(th.Link)}}
+	}
+	runs := []Run{{Text: label, Style: base.Merge(th.Link), Link: path}}
+	return append(runs, r.linkSuffix(path, base)...)
 }
 
 // linkSuffix returns the parenthesized URL shown after link text, or nil when

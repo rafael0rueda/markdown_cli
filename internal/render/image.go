@@ -16,7 +16,7 @@ type ImageHandler interface {
 	// An error means the image cannot be drawn - missing, unreadable, or in an
 	// unsupported format - and is an ordinary outcome, not a failure: the
 	// caller falls back to alt text.
-	Measure(ref string, maxCols, maxRows int) (cols, rows int, err error)
+	Measure(ref string, maxCols, maxRows int, hint SizeHint) (cols, rows int, err error)
 
 	// Encode returns the escape sequence drawing the image in a box of exactly
 	// cols by rows cells, indented by the given columns, and moving the cursor
@@ -24,31 +24,153 @@ type ImageHandler interface {
 	Encode(ref string, cols, rows, indent int) (string, error)
 }
 
+// SizeHint is a size the document asked for explicitly, in pixels. Obsidian
+// writes it as ![[diagram.png|300]] or ![[diagram.png|300x200]]. Zero in a
+// field means unspecified, and the image is sized to fit the available space.
+type SizeHint struct {
+	Width, Height int
+}
+
 // defaultMaxImageRows caps how tall an image may be when the caller does not
 // say. A picture that fills several screens buries the text it belongs to, and
 // without knowing the terminal height there is no better basis for a limit.
 const defaultMaxImageRows = 20
 
-// blockImage renders a paragraph that contains nothing but an image.
+// blockChunk is one piece of a split block: either a run of inline content, or
+// a single image standing alone on its own source line.
+type blockChunk struct {
+	nodes []ast.Node
+	image ast.Node // *ast.Image, or a *Wikilink embed
+}
+
+// splitInlines divides a paragraph into chunks at any image that sits alone on
+// its own source line.
 //
-// Only a lone image becomes a picture. An image sitting in the middle of a
-// sentence stays alt text, because the graphics protocols draw into a
-// rectangle of whole cells: placing one mid-line would either overwrite the
-// words beside it or force the line to be as tall as the picture. Markdown
-// that means to show a picture puts it on its own line, so this matches how
-// documents are actually written.
+// A markdown paragraph runs until a blank line, so this is one paragraph:
 //
-// It reports whether the image was placed.
-func (r *renderer) blockImage(n ast.Node) bool {
+//	With a 's' in the group execute position.
+//	![[diagram.png]]
+//
+// Rendering it as a single block would leave the picture stranded mid-sentence.
+// Splitting it lets the text wrap as prose and the image become a block, which
+// is what the document means and what Obsidian shows.
+func splitInlines(n ast.Node) []blockChunk {
+	var chunks []blockChunk
+	var current []ast.Node
+
+	flush := func() {
+		if len(current) > 0 {
+			chunks = append(chunks, blockChunk{nodes: current})
+			current = nil
+		}
+	}
+
+	afterImage := false
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		switch {
+		case standaloneImage(c):
+			flush()
+			chunks = append(chunks, blockChunk{image: c})
+			afterImage = true
+
+		case afterImage && isBreakMarker(c):
+			// goldmark represents the newline that ended the image's line as
+			// an empty text node carrying the break flag. Keeping it would put
+			// a stray blank line under every picture.
+			afterImage = false
+
+		default:
+			afterImage = false
+			current = append(current, c)
+		}
+	}
+	flush()
+	return chunks
+}
+
+// standaloneImage reports whether n is an image occupying a source line by
+// itself, with only line breaks on either side.
+//
+// The test is made against the siblings rather than the source text because
+// goldmark records exactly what is needed: the text node before a line break
+// carries the break flag, and a break following an image appears as an empty
+// text node carrying it. Anything else next to the image means it shares its
+// line with words.
+func standaloneImage(n ast.Node) bool {
+	if !isImageNode(n) {
+		return false
+	}
+	if prev := n.PreviousSibling(); prev != nil && !endsLine(prev) {
+		return false
+	}
+	if next := n.NextSibling(); next != nil && !isBreakMarker(next) {
+		return false
+	}
+	return true
+}
+
+// isImageNode reports whether n draws a picture.
+func isImageNode(n ast.Node) bool {
+	switch n := n.(type) {
+	case *ast.Image:
+		return true
+	case *Wikilink:
+		return n.Embed
+	}
+	return false
+}
+
+// endsLine reports whether n is a text node that ends its source line.
+func endsLine(n ast.Node) bool {
+	t, ok := n.(*ast.Text)
+	return ok && (t.SoftLineBreak() || t.HardLineBreak())
+}
+
+// isBreakMarker reports whether n is an empty text node that exists only to
+// carry a line break.
+func isBreakMarker(n ast.Node) bool {
+	t, ok := n.(*ast.Text)
+	return ok && t.Segment.Len() == 0 && (t.SoftLineBreak() || t.HardLineBreak())
+}
+
+// inlineBlock renders a paragraph or text block, placing any standalone images
+// as pictures and the rest as prose.
+func (r *renderer) inlineBlock(n ast.Node) {
+	chunks := splitInlines(n)
+
+	// The common case is a block with no images at all, which must render
+	// exactly as it did before this splitting existed.
+	if len(chunks) == 1 && chunks[0].image == nil {
+		r.emit(r.inlineNodes(chunks[0].nodes, r.base, ""))
+		return
+	}
+
+	for i, chunk := range chunks {
+		if i > 0 {
+			// A picture is a block, so it gets air around it rather than
+			// butting straight up against the sentence that introduced it.
+			r.blank()
+		}
+		if chunk.image != nil {
+			if r.placeImage(chunk.image) {
+				continue
+			}
+			// Not drawable: fall through to rendering it as alt text.
+			r.emit(r.inlineNodes([]ast.Node{chunk.image}, r.base, ""))
+			continue
+		}
+		r.emit(r.inlineNodes(chunk.nodes, r.base, ""))
+	}
+}
+
+// placeImage measures an image and reserves the rows it needs, reporting
+// whether it will be drawn.
+func (r *renderer) placeImage(n ast.Node) bool {
 	if r.opts.Images == nil {
 		return false
 	}
-	img := soleImage(n, r.src)
-	if img == nil {
-		return false
-	}
 
-	ref := r.resolve(string(img.Destination))
+	ref, alt, hint := r.imageRef(n)
 	if ref == "" {
 		return false
 	}
@@ -60,15 +182,11 @@ func (r *renderer) blockImage(n ast.Node) bool {
 		maxRows = defaultMaxImageRows
 	}
 
-	cols, rows, err := r.opts.Images.Measure(ref, maxCols, maxRows)
+	cols, rows, err := r.opts.Images.Measure(ref, maxCols, maxRows, hint)
 	if err != nil || cols < 1 || rows < 1 {
 		return false
 	}
 
-	// Reserve the rows as blank lines. They are real lines in the document so
-	// that line numbers stay continuous, which is what lets the pager scroll
-	// through an image without knowing anything about it.
-	alt := r.imageAlt(img)
 	first, _ := r.prefixes()
 	prefix := append([]Run(nil), first...)
 
@@ -98,9 +216,29 @@ func (r *renderer) blockImage(n ast.Node) bool {
 	return true
 }
 
+// imageRef resolves an image node to a path, its alt text, and any size the
+// document asked for.
+func (r *renderer) imageRef(n ast.Node) (ref string, alt []Run, hint SizeHint) {
+	switch n := n.(type) {
+	case *ast.Image:
+		return r.resolve(string(n.Destination)), r.imageAlt(strings.TrimSpace(nodeText(n, r.src))), SizeHint{}
+
+	case *Wikilink:
+		path, ok := r.resolveEmbed(n.Target)
+		if !ok {
+			return "", nil, SizeHint{}
+		}
+		label := n.Display
+		if label == "" {
+			label = n.Target
+		}
+		return path, r.imageAlt(label), SizeHint{Width: n.Width, Height: n.Height}
+	}
+	return "", nil, SizeHint{}
+}
+
 // imageAlt builds the text shown if the image cannot be drawn after all.
-func (r *renderer) imageAlt(n *ast.Image) []Run {
-	alt := strings.TrimSpace(nodeText(n, r.src))
+func (r *renderer) imageAlt(alt string) []Run {
 	if alt == "" {
 		alt = "image"
 	}
@@ -109,34 +247,4 @@ func (r *renderer) imageAlt(n *ast.Image) []Run {
 		icon += " "
 	}
 	return []Run{{Text: icon + alt, Style: r.base.Merge(r.th.ImageAlt)}}
-}
-
-// soleImage returns the image if the block holds one and nothing else.
-//
-// The block may be a paragraph or, inside a tight list item, a text block;
-// goldmark uses the latter where a paragraph would produce unwanted spacing,
-// and an image in a list is common enough to be worth handling.
-//
-// Whitespace around it is ignored: a line break before or after the image is
-// invisible in the rendered source, and markdown formatters routinely insert
-// them. Anything else alongside the image means the block is a sentence that
-// happens to contain a picture, which is drawn as alt text instead.
-func soleImage(n ast.Node, src []byte) *ast.Image {
-	var found *ast.Image
-	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
-		switch c := c.(type) {
-		case *ast.Image:
-			if found != nil {
-				return nil // more than one image: treat as prose
-			}
-			found = c
-		case *ast.Text:
-			if strings.TrimSpace(string(c.Text(src))) != "" {
-				return nil
-			}
-		default:
-			return nil
-		}
-	}
-	return found
 }

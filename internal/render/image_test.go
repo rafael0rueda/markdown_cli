@@ -18,10 +18,12 @@ type fakeImages struct {
 
 	measured []string
 	encoded  []string
+	hints    []SizeHint
 }
 
-func (f *fakeImages) Measure(ref string, maxCols, maxRows int) (int, int, error) {
+func (f *fakeImages) Measure(ref string, maxCols, maxRows int, hint SizeHint) (int, int, error) {
 	f.measured = append(f.measured, ref)
+	f.hints = append(f.hints, hint)
 	if f.measureErr != nil {
 		return 0, 0, f.measureErr
 	}

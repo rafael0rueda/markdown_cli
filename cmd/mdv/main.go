@@ -15,6 +15,7 @@ import (
 	"mdv/internal/render"
 	"mdv/internal/term"
 	"mdv/internal/theme"
+	"mdv/internal/vault"
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
@@ -37,6 +38,9 @@ type config struct {
 	probeWait time.Duration
 	images    string
 	remoteImg bool
+	vaultDir  string
+	noVault   bool
+	frontStr  string
 }
 
 func main() {
@@ -62,6 +66,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs.BoolVar(&cfg.ascii, "ascii", false, "use ASCII instead of Unicode box drawing")
 	fs.StringVar(&cfg.images, "images", "auto", "image drawing: auto, none, kitty, sixel")
 	fs.BoolVar(&cfg.remoteImg, "remote-images", false, "fetch images over http, off by default")
+	fs.StringVar(&cfg.vaultDir, "vault", "", "Obsidian vault root (default: found from the document)")
+	fs.BoolVar(&cfg.noVault, "no-vault", false, "do not resolve [[wikilinks]] against a vault")
+	fs.StringVar(&cfg.frontStr, "frontmatter", "meta", "YAML frontmatter: meta, hide, raw")
 	fs.BoolVar(&cfg.showCaps, "caps", false, "report what the terminal supports and exit")
 	fs.BoolVar(&cfg.noProbe, "no-probe", false, "do not query the terminal; use the environment alone")
 	fs.DurationVar(&cfg.probeWait, "probe-timeout", term.DefaultProbeTimeout, "how long to wait for the terminal to answer")
@@ -122,6 +129,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	frontMode, err := render.ParseFrontmatterMode(cfg.frontStr)
+	if err != nil {
+		return err
+	}
 
 	writeOpts := render.WriteOptions{
 		Color:      colorMode,
@@ -163,6 +174,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 			BaseDir:      baseDir,
 			Images:       imageHandler,
 			MaxImageRows: maxImageRows(caps),
+			Frontmatter:  frontMode,
+			Links:        resolveVault(cfg, name, baseDir),
 		})
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
@@ -278,6 +291,43 @@ func resolveImages(cfg config, caps term.Caps) (render.ImageHandler, error) {
 		CellWidth:  caps.CellWidth,
 		CellHeight: caps.CellHeight,
 	}, nil
+}
+
+// resolveVault finds the note vault a document belongs to, so that
+// Obsidian-style [[links]] and ![[embeds]] can be resolved.
+//
+// Detection is automatic because a vault is discoverable: it is the nearest
+// ancestor directory holding a .obsidian folder. Requiring a flag would mean
+// the common case - opening a note from inside a vault - needed configuration
+// to work at all.
+//
+// A nil result is returned rather than an empty resolver, because the renderer
+// takes nil to mean the document is not in a vault and renders wikilinks as
+// plain text.
+func resolveVault(cfg config, docPath, docDir string) render.LinkResolver {
+	if cfg.noVault {
+		return nil
+	}
+	var v *vault.Vault
+	switch {
+	case cfg.vaultDir != "":
+		v = vault.Open(cfg.vaultDir)
+	case docPath == "-" || docDir == "":
+		// Markdown arriving on stdin has no location, so there is no vault to
+		// search from.
+		return nil
+	default:
+		v = vault.Find(docDir)
+	}
+	if v == nil {
+		return nil
+	}
+	// A typed nil inside the interface would not compare equal to nil, and the
+	// renderer's check would pass a resolver that resolves nothing.
+	if r := v.For(docDir); r != nil {
+		return r
+	}
+	return nil
 }
 
 // maxImageRows caps image height at nearly a full screen, so a picture cannot
