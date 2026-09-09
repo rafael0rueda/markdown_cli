@@ -1,0 +1,57 @@
+# mdv Demo Document
+
+A paragraph with *emphasis*, **strong**, ***both***, `inline code`,
+~~struck through~~ and a [link to example](https://example.com/page).
+
+## Lists
+
+- First bullet
+- Second bullet with a much longer body that should wrap cleanly across
+  several lines to prove the wrapper honours the hanging indent.
+  - Nested bullet
+    - Deeper still
+- [ ] An unchecked task
+- [x] A completed task
+
+1. Ordered one
+2. Ordered two
+10. Ordered ten
+
+## Quote
+
+> A blockquote that runs long enough to wrap, so the bar on the left has
+> to be repeated on every single line of the output.
+>
+> > And a nested quote inside it.
+
+## Code
+
+```go
+func main() {
+	// A comment
+	fmt.Println("hello, kitty")
+}
+```
+
+    indented code block
+    second line
+
+## Table
+
+| Language | Typing   | Notes                                    |
+|:---------|:--------:|-----------------------------------------:|
+| Go       | static   | Fast builds, single binary               |
+| Python   | dynamic  | Batteries included                       |
+| Rust     | static   | Borrow checker, no runtime               |
+
+## Rest
+
+An image: ![a kitten](./cat.png)
+
+A footnote reference[^1].
+
+[^1]: The footnote body lives down here.
+
+***
+
+<div class="raw">Raw HTML block</div>
