@@ -1,0 +1,99 @@
+# Release configuration for GoReleaser (https://goreleaser.com).
+#
+# Pushing a tag like v0.1.0 runs .github/workflows/release.yml, which builds
+# everything below and publishes it as a GitHub release. To build the same
+# artifacts locally without publishing anything: make snapshot.
+version: 2
+
+project_name: mdv
+
+builds:
+  - id: mdv
+    main: ./cmd/mdv
+    binary: mdv
+    # Static binaries, so one Linux build runs on every distribution
+    # regardless of its libc.
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    # Stamp files with the commit time rather than the build time, so that
+    # building the same tag twice gives byte-identical archives.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: mdv
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Fixed ownership and timestamps, so the archive does not carry the
+    # builder's user name and a rebuild of the same tag is byte-identical.
+    builds_info:
+      owner: root
+      group: root
+      mtime: "{{ .CommitDate }}"
+    files:
+      - src: LICENSE
+        info: &fileinfo
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info: *fileinfo
+      - src: docs/mdv.1
+        dst: mdv.1
+        info: *fileinfo
+
+checksum:
+  name_template: checksums.txt
+
+nfpms:
+  - id: packages
+    package_name: mdv
+    file_name_template: "{{ .ConventionalFileName }}"
+    homepage: https://github.com/rafael0rueda/markdown_cli
+    maintainer: Rafael Rueda <rrrm85@gmail.com>
+    description: |-
+      A markdown viewer for the terminal.
+      Renders CommonMark and GitHub-flavored markdown with syntax highlighting,
+      tables, clickable links and inline images, and reads Obsidian vaults.
+      Built for kitty first, and degrades cleanly on other terminals.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - archlinux
+    bindir: /usr/bin
+    section: text
+    contents:
+      - src: docs/mdv.1
+        dst: /usr/share/man/man1/mdv.1
+      - src: README.md
+        dst: /usr/share/doc/mdv/README.md
+      # Each packaging system has its own place for the license.
+      - src: LICENSE
+        dst: /usr/share/doc/mdv/copyright
+        packager: deb
+      - src: LICENSE
+        dst: /usr/share/licenses/mdv/LICENSE
+        packager: rpm
+        type: license
+      - src: LICENSE
+        dst: /usr/share/licenses/mdv/LICENSE
+        packager: archlinux
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge "

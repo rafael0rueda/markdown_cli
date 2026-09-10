@@ -32,26 +32,42 @@ and first-class support for [Obsidian](https://obsidian.md) vaults.
 
 ## Install
 
+### Packages
+
+Each [release](https://github.com/rafael0rueda/markdown_cli/releases) has
+static binaries for Linux and macOS on amd64 and arm64, plus packages for the
+major Linux families. The packages include the man page.
+
+```sh
+sudo dnf install ./mdv-*.x86_64.rpm         # Fedora, RHEL, openSUSE
+sudo apt install ./mdv_*_amd64.deb          # Debian, Ubuntu
+sudo pacman -U mdv-*-x86_64.pkg.tar.zst     # Arch
+```
+
+The tarballs hold the binary, the man page (`mdv.1`), and the license.
+`checksums.txt` has a SHA-256 for every file.
+
+### With Go
+
 ```sh
 go install github.com/rafael0rueda/markdown_cli/cmd/mdv@latest
 ```
 
-Or build from source:
+That installs the binary but not the man page.
+
+### From source
 
 ```sh
 git clone https://github.com/rafael0rueda/markdown_cli
 cd markdown_cli
-make build          # ./bin/mdv
-make install        # $GOBIN/mdv
+make build                          # ./bin/mdv
+sudo make install                   # /usr/local/bin and the man page
+make install PREFIX=$HOME/.local    # or just for you, no sudo
 ```
 
 Building needs Go 1.25 or newer (chroma sets that floor). The binary itself has
 no runtime requirements — `CGO_ENABLED=0` throughout, so it runs on any
 distribution regardless of its libc.
-
-```sh
-make dist           # static binaries for linux and darwin, amd64 and arm64
-```
 
 ## Usage
 
@@ -77,7 +93,11 @@ With no file, or with `-`, mdv reads markdown from standard input.
 | `-caps` | | Report what the terminal supports, and exit |
 | `-no-probe` | off | Never query the terminal; use the environment alone |
 | `-probe-timeout` | `300ms` | How long to wait for the terminal to answer |
+| `-config` | see below | Read defaults from this file |
+| `-no-config` | off | Ignore the configuration file |
 | `-version` | | Print version and exit |
+
+`man mdv` has the full reference.
 
 ### The pager
 
@@ -109,6 +129,27 @@ Use `-color=always` to override. [`NO_COLOR`](https://no-color.org) is honoured.
 
 Width is capped at 100 columns when detected from the terminal, because prose
 set much wider is measurably harder to read. `-width` overrides.
+
+### Configuration
+
+Any flag can be given a standing default in `~/.config/mdv/config` (or
+`$XDG_CONFIG_HOME/mdv/config`), one per line:
+
+```ini
+# ~/.config/mdv/config
+theme = light
+width = 90
+links = inline
+ascii
+```
+
+The names are the flag names without the dash, and a bare name switches a
+boolean flag on. The command line always wins, so `mdv -theme=dark` still
+gets the dark theme. A typo is an error naming the line, rather than a setting
+that silently does nothing.
+
+`MDV_CONFIG` or `-config` points at a different file, and `-no-config` skips
+it.
 
 ## Obsidian vaults
 
@@ -219,7 +260,20 @@ make test           # go test ./...
 make race           # under the race detector
 make lint           # fmt, vet, test
 make golden         # regenerate golden files after a layout change
+make man            # preview the man page
+make dist           # static binaries for linux and darwin, amd64 and arm64
+make snapshot       # every release artifact, unpublished (needs goreleaser)
 ```
+
+**Releasing** is pushing a tag. `git tag v0.2.0 && git push origin v0.2.0` runs
+the release workflow, which tests, then builds the archives and packages with
+[GoReleaser](https://goreleaser.com) and publishes them. CI builds the same
+artifacts on every push without publishing them, so a broken package shows up
+before the tag does.
+
+The man page and the README are checked against the code: a test fails if
+either is missing a flag, and another runs the man page through `groff` to
+catch markup mistakes.
 
 Two testing approaches worth knowing about, since both cover things that are
 otherwise hard to check without a terminal:
@@ -241,14 +295,16 @@ otherwise hard to check without a terminal:
 ### Layout
 
 ```
-cmd/mdv/            flag parsing, input dispatch
+cmd/mdv/            flag parsing, the config file, input dispatch
 internal/render/    markdown -> a line-addressed document of styled runs
 internal/theme/     colors, styles, palettes, glyph sets
 internal/term/      terminal capability detection and probing
 internal/graphics/  decoding, scaling, and the kitty and sixel protocols
 internal/vault/     Obsidian vault detection and wikilink resolution
 internal/pager/     the interactive viewer
-docs/               screenshots and other documentation assets
+internal/settings/  the configuration file format
+docs/               the man page and screenshots
+.goreleaser.yaml    release archives and Linux packages
 ```
 
 ## Status

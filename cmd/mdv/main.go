@@ -43,47 +43,50 @@ type config struct {
 	noVault   bool
 	frontStr  string
 	pagerMode string
+
+	configPath string
+	noConfig   bool
 }
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			os.Exit(2)
-		}
+	err := run(os.Args[1:], os.Stdout, os.Stderr)
+	var uerr usageError
+	switch {
+	case err == nil, errors.Is(err, flag.ErrHelp):
+		// Asking for help is not a failure.
+	case errors.As(err, &uerr):
+		// The flag package has already printed the problem and the usage, so
+		// printing it again would only repeat it.
+		os.Exit(2)
+	default:
 		fmt.Fprintf(os.Stderr, "mdv: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+// usageError marks a mistake on the command line, as opposed to a failure while
+// doing what was asked. It exits with status 2, the convention for misuse.
+type usageError struct{ err error }
+
+func (e usageError) Error() string { return e.err.Error() }
+func (e usageError) Unwrap() error { return e.err }
+
 func run(args []string, stdout, stderr io.Writer) error {
 	var cfg config
-
-	fs := flag.NewFlagSet("mdv", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.IntVar(&cfg.width, "width", 0, "layout width in columns (0 = detect)")
-	fs.IntVar(&cfg.width, "w", 0, "shorthand for -width")
-	fs.StringVar(&cfg.themeName, "theme", "auto", "color theme: "+strings.Join(theme.Names(), ", "))
-	fs.StringVar(&cfg.colorName, "color", "auto", "color depth: auto, none, 16, 256, truecolor")
-	fs.StringVar(&cfg.linkName, "links", "auto", "link display: auto, inline, hide")
-	fs.BoolVar(&cfg.ascii, "ascii", false, "use ASCII instead of Unicode box drawing")
-	fs.StringVar(&cfg.images, "images", "auto", "image drawing: auto, none, kitty, sixel")
-	fs.BoolVar(&cfg.remoteImg, "remote-images", false, "fetch images over http, off by default")
-	fs.StringVar(&cfg.vaultDir, "vault", "", "Obsidian vault root (default: found from the document)")
-	fs.BoolVar(&cfg.noVault, "no-vault", false, "do not resolve [[wikilinks]] against a vault")
-	fs.StringVar(&cfg.frontStr, "frontmatter", "meta", "YAML frontmatter: meta, hide, raw")
-	fs.StringVar(&cfg.pagerMode, "pager", "auto", "interactive pager: auto, always, never")
-	fs.BoolVar(&cfg.showCaps, "caps", false, "report what the terminal supports and exit")
-	fs.BoolVar(&cfg.noProbe, "no-probe", false, "do not query the terminal; use the environment alone")
-	fs.DurationVar(&cfg.probeWait, "probe-timeout", term.DefaultProbeTimeout, "how long to wait for the terminal to answer")
-	fs.BoolVar(&cfg.showVer, "version", false, "print version and exit")
-	fs.Usage = func() { usage(stderr, fs) }
+	fs := newFlagSet(&cfg, stderr)
 
 	if err := fs.Parse(args); err != nil {
-		return err
+		if errors.Is(err, flag.ErrHelp) {
+			return err
+		}
+		return usageError{err}
 	}
 	if cfg.showVer {
-		fmt.Fprintf(stdout, "mdv %s\n", version)
+		fmt.Fprintf(stdout, "mdv %s\n", buildVersion())
 		return nil
+	}
+	if err := applySettings(fs, &cfg); err != nil {
+		return err
 	}
 
 	out, ok := stdout.(*os.File)
@@ -192,6 +195,33 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	return render.Write(stdout, doc, writeOpts)
+}
+
+// newFlagSet defines the command line. The configuration file sets the same
+// flags, so this is also the list of what the file may contain.
+func newFlagSet(cfg *config, stderr io.Writer) *flag.FlagSet {
+	fs := flag.NewFlagSet("mdv", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.IntVar(&cfg.width, "width", 0, "layout width in columns (0 = detect)")
+	fs.IntVar(&cfg.width, "w", 0, "shorthand for -width")
+	fs.StringVar(&cfg.themeName, "theme", "auto", "color theme: "+strings.Join(theme.Names(), ", "))
+	fs.StringVar(&cfg.colorName, "color", "auto", "color depth: auto, none, 16, 256, truecolor")
+	fs.StringVar(&cfg.linkName, "links", "auto", "link display: auto, inline, hide")
+	fs.BoolVar(&cfg.ascii, "ascii", false, "use ASCII instead of Unicode box drawing")
+	fs.StringVar(&cfg.images, "images", "auto", "image drawing: auto, none, kitty, sixel")
+	fs.BoolVar(&cfg.remoteImg, "remote-images", false, "fetch images over http, off by default")
+	fs.StringVar(&cfg.vaultDir, "vault", "", "Obsidian vault root (default: found from the document)")
+	fs.BoolVar(&cfg.noVault, "no-vault", false, "do not resolve [[wikilinks]] against a vault")
+	fs.StringVar(&cfg.frontStr, "frontmatter", "meta", "YAML frontmatter: meta, hide, raw")
+	fs.StringVar(&cfg.pagerMode, "pager", "auto", "interactive pager: auto, always, never")
+	fs.BoolVar(&cfg.showCaps, "caps", false, "report what the terminal supports and exit")
+	fs.BoolVar(&cfg.noProbe, "no-probe", false, "do not query the terminal; use the environment alone")
+	fs.DurationVar(&cfg.probeWait, "probe-timeout", term.DefaultProbeTimeout, "how long to wait for the terminal to answer")
+	fs.StringVar(&cfg.configPath, "config", "", "read defaults from this file instead of "+defaultConfigLabel)
+	fs.BoolVar(&cfg.noConfig, "no-config", false, "ignore the configuration file")
+	fs.BoolVar(&cfg.showVer, "version", false, "print version and exit")
+	fs.Usage = func() { usage(stderr, fs) }
+	return fs
 }
 
 // document is one input, loaded and ready to render.
@@ -486,7 +516,10 @@ With no file, or with "-", mdv reads markdown from standard input.
 Output is plain when it is not going to a terminal, so piping into a
 file or another program is safe.
 
+Defaults for any flag can be set in %s, one per line
+as "name = value"; the command line wins. See mdv(1) for more.
+
 Flags:
-`)
+`, defaultConfigLabel)
 	fs.PrintDefaults()
 }

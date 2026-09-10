@@ -22,6 +22,9 @@ func runCLI(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	// on "none" and the assertions can be made on plain text.
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("TERM", "xterm-256color")
+	// Keep the developer's own configuration file out of the results.
+	t.Setenv("MDV_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	var out, errBuf bytes.Buffer
 	err = run(args, &out, &errBuf)

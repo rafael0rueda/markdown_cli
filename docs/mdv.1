@@ -1,0 +1,348 @@
+.TH MDV 1 "September 2026" "mdv" "User Commands"
+.SH NAME
+mdv \- render markdown in the terminal
+.SH SYNOPSIS
+.B mdv
+.RI [ flags ]
+.RI [ file ...]
+.SH DESCRIPTION
+.B mdv
+renders CommonMark and GitHub-flavored markdown for reading in a terminal:
+headings, emphasis, syntax-highlighted code, box-drawn tables, task lists,
+footnotes, clickable links and inline images.
+.PP
+With no
+.IR file ,
+or with
+.BR \- ,
+the document is read from standard input.
+Several files are shown one after another, each under a header naming it.
+.PP
+When standard output is a terminal,
+.B mdv
+opens an interactive pager.
+Otherwise it writes the document out and exits, and the output contains no
+escape sequences at all \(em no color, hyperlinks or images \(em so redirecting
+it to a file or piping it into another program gives plain text.
+.PP
+Where it can,
+.B mdv
+asks the terminal what it supports rather than guessing: it writes a short
+string of queries and reads the replies, to learn whether images can be drawn
+and how, the size of a character cell, and the background color that decides
+between the dark and light themes.
+Color depth comes from
+.B COLORTERM
+and
+.BR TERM ,
+and hyperlink support from recognizing the terminal.
+.B mdv \-caps
+shows what was found.
+.SH OPTIONS
+Flags take one dash or two, and a value either as the next argument or after
+an equals sign:
+.B \-width 80
+and
+.B \-\-width=80
+are the same.
+Boolean flags are switched off with
+.BR \-flag=false .
+.TP
+.BR \-w ", " \-width " \fIcolumns\fR"
+Lay the document out this many columns wide.
+The default is the terminal's width, capped at 100 columns because prose set
+much wider is harder to read; or 80 when output is not a terminal.
+.TP
+.BI \-theme " name"
+Color theme:
+.BR dark ,
+.BR light ,
+.BR plain ,
+or
+.BR auto ,
+the default, which picks dark or light from the terminal's actual background
+color.
+.TP
+.BI \-color " depth"
+How many colors to use:
+.BR none ,
+.BR 16 ,
+.BR 256 ,
+.BR truecolor ,
+.BR always ,
+or
+.BR auto ,
+the default.
+Auto uses what the terminal supports, and none when output is not a terminal.
+.B always
+forces color on even when output is redirected, at the depth the environment
+advertises.
+.TP
+.BI \-links " mode"
+How links are shown.
+.B inline
+prints the destination in parentheses after the link text;
+.B hide
+shows only the text.
+The default,
+.BR auto ,
+hides destinations when the terminal supports clickable hyperlinks, since the
+text itself then carries the link, and shows them otherwise.
+.TP
+.BI \-images " protocol"
+How to draw images:
+.BR kitty ,
+.BR sixel ,
+.BR none ,
+or
+.BR auto ,
+the default, which uses whichever the terminal was found to support.
+Where no image can be drawn, its alt text is shown instead.
+.TP
+.B \-remote\-images
+Fetch images referenced by http or https URLs.
+Off by default, so that reading a document never makes a network request.
+.TP
+.BI \-pager " mode"
+.B auto
+pages when output is a terminal and streams otherwise;
+.B never
+always streams;
+.B always
+insists on the pager and fails if there is no terminal to draw on.
+.TP
+.BI \-frontmatter " mode"
+What to do with YAML frontmatter.
+.BR meta ,
+the default, shows it as a compact header of aligned keys and values;
+.B hide
+drops it;
+.B raw
+leaves it to be rendered as ordinary markdown.
+.TP
+.BI \-vault " directory"
+Treat this directory as the Obsidian vault the documents belong to.
+By default the vault is found automatically; see
+.B OBSIDIAN VAULTS
+below.
+.TP
+.B \-no\-vault
+Do not resolve wikilinks and embeds against a vault.
+.TP
+.B \-ascii
+Draw tables, rules, bullets and quotes with ASCII characters instead of
+Unicode box drawing, for fonts or terminals that lack the glyphs.
+.TP
+.B \-caps
+Report what the terminal supports, and whether each answer was measured or
+inferred from the environment, then exit.
+The first thing to try when something renders wrongly.
+.TP
+.B \-no\-probe
+Do not query the terminal; decide everything from environment variables.
+.TP
+.BI \-probe\-timeout " duration"
+How long to wait for the terminal to answer its queries, such as
+.B 300ms
+(the default) or
+.BR 1s .
+Worth raising over a slow remote connection.
+.TP
+.BI \-config " file"
+Read defaults from this file instead of the usual one.
+.TP
+.B \-no\-config
+Ignore the configuration file.
+.TP
+.B \-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-help
+Print a summary of the flags and exit.
+.SH PAGER
+In the pager, the document scrolls under a one-line status bar showing its
+name and position.
+Resizing the window lays the document out again at the new width, keeping the
+reading position.
+.TP
+.BR j ", " k ", " Down ", " Up
+Scroll one line.
+.TP
+.BR d ", " u
+Scroll half a screen.
+.TP
+.BR Space ", " b ", " "Page Down" ", " "Page Up" ", " Ctrl\-F ", " Ctrl\-B
+Scroll a screen.
+.TP
+.BR g ", " G ", " Home ", " End
+Jump to the start or the end.
+.TP
+.B /
+Search.
+Matches are highlighted as the query is typed, ignoring case;
+.B Enter
+jumps to the next match and
+.B Esc
+cancels.
+.TP
+.BR n ", " N
+Jump to the next or previous match.
+.TP
+.BR q ", " Ctrl\-C
+Quit.
+.SH CONFIGURATION
+Defaults for any flag can be kept in a configuration file, read from the
+first of:
+.IP \(bu 3
+the file named by
+.BR \-config ;
+.IP \(bu 3
+the file named by
+.BR MDV_CONFIG ;
+.IP \(bu 3
+.IR $XDG_CONFIG_HOME/mdv/config ;
+.IP \(bu 3
+.IR ~/.config/mdv/config .
+.PP
+The file holds one flag per line, written as
+.I name
+=
+.IR value ,
+with the flag's name and no dashes.
+A name on its own switches a boolean flag on.
+Lines starting with
+.B #
+are comments; a
+.B #
+elsewhere is part of the value.
+Quotes around a value are optional.
+.PP
+.RS 4
+.nf
+# ~/.config/mdv/config
+theme = light
+width = 90
+links = inline
+ascii
+.fi
+.RE
+.PP
+Anything given on the command line wins over the file, so
+.B mdv\~\-theme=dark
+still gets the dark theme with the file above.
+.PP
+An unknown name or a bad value in the file is an error that names the line.
+.BR \-config ,
+.BR \-no\-config ,
+.B \-version
+and
+.B \-caps
+cannot be set in the file.
+A missing file at the default location is not an error, but a missing file
+named by
+.B \-config
+or
+.B MDV_CONFIG
+is.
+.SH OBSIDIAN VAULTS
+A document inside an Obsidian vault \(em a directory holding a
+.I .obsidian
+folder, found by searching upwards from the document \(em also gets the
+syntax Obsidian adds to markdown:
+.TP
+.B ![[image.png]]
+An embedded image, drawn inline.
+.B ![[image.png|300]]
+caps it at 300 pixels wide.
+.TP
+.B [[Some Note]]
+A link to the note's file.
+.B [[Some Note|label]]
+shows
+.I label
+instead, and
+.B [[Some Note#Section]]
+reads
+.IR "Some Note > Section" .
+.PP
+Embeds are resolved the way Obsidian resolves them: in the attachment folder
+set in
+.IR .obsidian/app.json ,
+then the note's own folder, then the vault root, then anywhere in the vault by
+name, preferring the shallowest match.
+A link or embed that resolves to nothing still shows its label.
+.SH ENVIRONMENT
+.TP
+.B MDV_CONFIG
+The configuration file to read.
+.TP
+.B XDG_CONFIG_HOME
+Where the configuration directory is, if not
+.IR ~/.config .
+.TP
+.B NO_COLOR
+When set, no color is used, as described at https://no\-color.org.
+.TP
+.BR COLORTERM ", " TERM
+The color depth.
+.B TERM=dumb
+turns color off.
+.TP
+.B COLORFGBG
+Whether the background is dark, when the terminal cannot be asked.
+.TP
+.BR TMUX ", " STY
+Inside tmux or screen the terminal is not probed, because the multiplexer
+intercepts the replies, and images are only drawn if
+.B \-images
+asks for them.
+.SH EXIT STATUS
+.TP
+.B 0
+Success, including
+.B \-h
+and
+.BR \-version .
+.TP
+.B 1
+An error: a file could not be read, the configuration file is invalid, or a
+flag was given a value it does not accept.
+.TP
+.B 2
+The command line could not be parsed.
+.SH EXAMPLES
+Read a file in the pager:
+.PP
+.RS 4
+.B mdv README.md
+.RE
+.PP
+Render into a file as plain text, 72 columns wide:
+.PP
+.RS 4
+.B mdv \-width 72 notes.md > notes.txt
+.RE
+.PP
+Page through several files, keeping color through a pipe into
+.BR less (1):
+.PP
+.RS 4
+.B mdv \-color=always *.md | less \-R
+.RE
+.PP
+Render markdown produced by another command:
+.PP
+.RS 4
+.B curl \-s https://example.com/README.md | mdv
+.RE
+.PP
+See what the terminal supports:
+.PP
+.RS 4
+.B mdv \-caps
+.RE
+.SH SEE ALSO
+.BR less (1),
+.BR kitty (1)
+.PP
+https://github.com/rafael0rueda/markdown_cli
