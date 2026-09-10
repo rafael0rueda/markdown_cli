@@ -120,7 +120,7 @@ func writeLine(w stringWriter, line Line, width int, opts WriteOptions) error {
 	// prev tracks the style currently in effect so unchanged styles do not
 	// re-emit their escape sequence on every run.
 	var prev theme.Style
-	var linkOpen bool
+	var openLink string // the URL of the hyperlink currently open, if any
 	dirty := false
 
 	emit := func(s string) error {
@@ -132,18 +132,25 @@ func writeLine(w stringWriter, line Line, width int, opts WriteOptions) error {
 		if r.Text == "" {
 			continue
 		}
-		if opts.links() && r.Link != "" {
-			if !linkOpen {
-				if err := emit(osc8(r.Link)); err != nil {
+		link := ""
+		if opts.links() {
+			link = r.Link
+		}
+		// Comparing URLs rather than tracking open/closed matters for two
+		// links with nothing between them: [a](x)[b](y) has to close x before
+		// b, or b ends up pointing at x.
+		if link != openLink {
+			if openLink != "" {
+				if err := emit(osc8End); err != nil {
 					return err
 				}
-				linkOpen = true
 			}
-		} else if linkOpen {
-			if err := emit(osc8End); err != nil {
-				return err
+			if link != "" {
+				if err := emit(osc8(sanitizeURL(link))); err != nil {
+					return err
+				}
 			}
-			linkOpen = false
+			openLink = link
 		}
 
 		if r.Style != prev {
@@ -164,12 +171,15 @@ func writeLine(w stringWriter, line Line, width int, opts WriteOptions) error {
 			}
 			prev = r.Style
 		}
-		if err := emit(r.Text); err != nil {
+		// The document was sanitized on the way in; this catches text that
+		// never came from it - file names, paths found on disk - so that no
+		// caller has to remember to.
+		if err := emit(sanitizeOutput(r.Text)); err != nil {
 			return err
 		}
 	}
 
-	if linkOpen {
+	if openLink != "" {
 		if err := emit(osc8End); err != nil {
 			return err
 		}

@@ -28,6 +28,9 @@ and first-class support for [Obsidian](https://obsidian.md) vaults.
   the text.
 - **Safe to pipe.** Output to anything other than a terminal contains no escape
   sequences at all.
+- **Safe with untrusted files.** Control characters in a document are shown
+  (`␛`), never passed to the terminal, so a hostile README cannot retitle your
+  window, rewrite your clipboard, or paint over the screen.
 - **Single static binary**, no runtime dependencies.
 
 ## Install

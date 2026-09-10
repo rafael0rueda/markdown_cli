@@ -59,7 +59,8 @@ func main() {
 		// printing it again would only repeat it.
 		os.Exit(2)
 	default:
-		fmt.Fprintf(os.Stderr, "mdv: %v\n", err)
+		// Errors quote file names, and a file name can hold anything.
+		fmt.Fprintf(os.Stderr, "mdv: %s\n", render.Sanitize(err.Error()))
 		os.Exit(1)
 	}
 }
@@ -307,7 +308,9 @@ func readInput(name string) (source []byte, baseDir string, err error) {
 
 // fileHeader labels a document when more than one was given.
 func fileHeader(name string, width int, th *theme.Theme) render.Line {
-	label := " " + name + " "
+	// Sanitized here as well as on output, so the rule is measured against
+	// the name as it will actually appear.
+	label := " " + render.Sanitize(name) + " "
 	rule := width - render.NewRun(label).Width() - 1
 	if rule < 0 {
 		rule = 0
@@ -348,7 +351,7 @@ func runPager(build pager.Renderer, caps term.Caps, th *theme.Theme,
 
 	title := "mdv"
 	if len(docs) == 1 && docs[0].name != "-" {
-		title = filepath.Base(docs[0].name)
+		title = render.Sanitize(filepath.Base(docs[0].name))
 	} else if len(docs) > 1 {
 		title = fmt.Sprintf("%d documents", len(docs))
 	}

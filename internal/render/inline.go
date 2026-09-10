@@ -39,7 +39,7 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 
 	switch n := n.(type) {
 	case *ast.Text:
-		runs := []Run{{Text: string(n.Text(r.src)), Style: base, Link: link}}
+		runs := []Run{{Text: textValue(n, r.src), Style: base, Link: link}}
 		switch {
 		case n.HardLineBreak():
 			runs = append(runs, hardBreak)
@@ -73,7 +73,7 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 		return r.inlineChildren(n, base.Merge(th.Strike), link)
 
 	case *ast.Link:
-		dest := r.resolve(string(n.Destination))
+		dest := r.resolve(unescape(n.Destination))
 		runs := r.inlineChildren(n, base.Merge(th.Link), dest)
 		return append(runs, r.linkSuffix(dest, base)...)
 
@@ -96,7 +96,7 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 		if icon != "" {
 			icon += " "
 		}
-		dest := r.resolve(string(n.Destination))
+		dest := r.resolve(unescape(n.Destination))
 		runs := []Run{{Text: icon + alt, Style: base.Merge(th.ImageAlt), Link: dest}}
 		return append(runs, r.linkSuffix(dest, base)...)
 
@@ -205,6 +205,16 @@ func (r *renderer) resolve(dest string) string {
 	return out
 }
 
+// textValue returns what a text node says, with backslash escapes and
+// character references resolved. Raw text - the inside of a code span - is
+// taken literally, since escapes mean nothing there.
+func textValue(n *ast.Text, src []byte) string {
+	if n.IsRaw() {
+		return string(n.Value(src))
+	}
+	return unescape(n.Value(src))
+}
+
 // nodeText collects the plain text of an inline subtree.
 func nodeText(n ast.Node, src []byte) string {
 	var b strings.Builder
@@ -214,7 +224,7 @@ func nodeText(n ast.Node, src []byte) string {
 		}
 		switch c := c.(type) {
 		case *ast.Text:
-			b.Write(c.Text(src))
+			b.WriteString(textValue(c, src))
 		case *ast.String:
 			b.Write(c.Value)
 		}

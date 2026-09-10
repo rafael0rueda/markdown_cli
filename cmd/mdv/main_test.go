@@ -657,3 +657,17 @@ func (c *countingHandler) Measure(string, int, int, render.SizeHint) (int, int, 
 }
 
 func (c *countingHandler) Encode(string, int, int, int) (string, error) { return "<img>", nil }
+
+func TestFileHeaderSanitizesTheName(t *testing.T) {
+	// A file name can hold anything, and "mdv *.md" in a downloaded folder
+	// puts it on the screen.
+	line := fileHeader("evil\x1b]0;pwned\x07.md", 60, theme.Dark())
+	for _, r := range line.Runs {
+		if strings.ContainsAny(r.Text, "\x1b\x07") {
+			t.Errorf("control character in header: %q", r.Text)
+		}
+	}
+	if got := line.Width(); got != 60 {
+		t.Errorf("header should still fill the width once sanitized: got %d", got)
+	}
+}

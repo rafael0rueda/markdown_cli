@@ -221,7 +221,7 @@ func (r *renderer) placeImage(n ast.Node) bool {
 func (r *renderer) imageRef(n ast.Node) (ref string, alt []Run, hint SizeHint) {
 	switch n := n.(type) {
 	case *ast.Image:
-		return r.resolve(string(n.Destination)), r.imageAlt(strings.TrimSpace(nodeText(n, r.src))), SizeHint{}
+		return r.resolve(unescape(n.Destination)), r.imageAlt(strings.TrimSpace(nodeText(n, r.src))), SizeHint{}
 
 	case *Wikilink:
 		path, ok := r.resolveEmbed(n.Target)

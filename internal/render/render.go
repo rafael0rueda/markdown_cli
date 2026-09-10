@@ -79,6 +79,11 @@ func Render(source []byte, opts Options) (*Doc, error) {
 		opts.Width = 20
 	}
 
+	// Before anything else looks at the text, so that no path through the
+	// renderer - code, raw HTML, frontmatter, link targets - can carry a
+	// terminal control sequence through to the output.
+	source = normalizeSource(source)
+
 	// Frontmatter is separated before parsing rather than after. CommonMark
 	// has no concept of it, so leaving it in the source makes the opening
 	// delimiter a horizontal rule and the properties a stray list.
