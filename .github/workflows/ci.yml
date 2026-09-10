@@ -33,7 +33,19 @@ jobs:
             echo "needs gofmt:"; echo "$unformatted"; exit 1
           fi
       - run: go vet ./...
-      - run: go test -race ./...
+      - name: go test
+        run: |
+          set -o pipefail
+          go test -race ./... 2>&1 | tee test.log
+      # Surface the failing tests as an annotation, so they show on the commit
+      # without digging through the job log.
+      - name: annotate test failures
+        if: failure()
+        run: |
+          summary=$(grep -E -e '--- FAIL|^FAIL|_test\.go:[0-9]+:|panic:' test.log | head -60)
+          summary=${summary//'%'/'%25'}
+          summary=${summary//$'\n'/'%0A'}
+          echo "::error title=go test failed::${summary}"
 
   # Build every release artifact without publishing, so a broken packaging
   # config shows up here rather than when a tag is pushed.
