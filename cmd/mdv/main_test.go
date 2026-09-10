@@ -374,6 +374,10 @@ func TestRunPipedOutputHasNoImages(t *testing.T) {
 	}
 }
 
+// noWrap is a layout width no test document reaches, for tests that assert on
+// content rather than layout.
+const noWrap = "10000"
+
 // buildTestVault writes a minimal Obsidian vault and returns its root.
 func buildTestVault(t *testing.T, attachmentDir string, files map[string]string) string {
 	t.Helper()
@@ -404,7 +408,11 @@ func TestRunResolvesWikilinksInAVault(t *testing.T) {
 		"Assets/pic.png":      "not really a png",
 	})
 
-	out, _, err := runCLI(t, "--width", "100", filepath.Join(root, "notes", "note.md"))
+	// Wide enough that no path wraps: the assertions below look for resolved
+	// paths in the text, and a path broken across lines - as it is at 100
+	// columns under some temp directory lengths, macOS's among them - would
+	// hide a correct result.
+	out, _, err := runCLI(t, "--width", noWrap, filepath.Join(root, "notes", "note.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +456,7 @@ func TestRunExplicitVault(t *testing.T) {
 	note := filepath.Join(outside, "note.md")
 	os.WriteFile(note, []byte("![[pic.png]]\n"), 0o644)
 
-	out, _, err := runCLI(t, "--width", "100", "--vault", root, note)
+	out, _, err := runCLI(t, "--width", noWrap, "--vault", root, note)
 	if err != nil {
 		t.Fatal(err)
 	}
