@@ -59,7 +59,9 @@ nfpms:
     package_name: mdv
     file_name_template: "{{ .ConventionalFileName }}"
     homepage: https://github.com/rafael0rueda/markdown_cli
-    maintainer: Rafael Rueda <rrrm85@gmail.com>
+    # GitHub's no-reply address: Debian requires an email here, and this one
+    # identifies the maintainer without publishing a personal inbox.
+    maintainer: Rafael Rueda <119822400+rafael0rueda@users.noreply.github.com>
     description: |-
       A markdown viewer for the terminal.
       Renders CommonMark and GitHub-flavored markdown with syntax highlighting,
@@ -72,6 +74,8 @@ nfpms:
       - archlinux
     bindir: /usr/bin
     section: text
+    archlinux:
+      packager: Rafael Rueda <119822400+rafael0rueda@users.noreply.github.com>
     contents:
       - src: docs/mdv.1
         dst: /usr/share/man/man1/mdv.1
