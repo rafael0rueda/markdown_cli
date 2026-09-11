@@ -39,7 +39,7 @@ func Size(f *os.File) (width, height int) {
 // over everything, a non-terminal target gets no escapes at all, and the depth
 // otherwise comes from COLORTERM and TERM.
 func DetectColor(f *os.File) theme.ColorMode {
-	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+	if noColor() {
 		return theme.ColorNone
 	}
 	if v := os.Getenv("TERM"); v == "dumb" || v == "" {
@@ -49,6 +49,16 @@ func DetectColor(f *os.File) theme.ColorMode {
 		return theme.ColorNone
 	}
 	return depthFromEnv()
+}
+
+// noColor reports whether NO_COLOR asks for no color.
+//
+// The convention at no-color.org counts the variable only when it holds
+// something, whatever that is. An empty NO_COLOR is how a script or a service
+// manager clears an inherited setting, and treating it as a request would
+// leave no way to turn color back on short of unsetting the variable.
+func noColor() bool {
+	return os.Getenv("NO_COLOR") != ""
 }
 
 // depthFromEnv reports the color depth the environment advertises, ignoring

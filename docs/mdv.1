@@ -306,7 +306,10 @@ Where the configuration directory is, if not
 .IR ~/.config .
 .TP
 .B NO_COLOR
-When set, no color is used, as described at https://no\-color.org.
+When set to anything but the empty string, no color is used, as described at
+https://no\-color.org.
+.B \-color
+still overrides it.
 .TP
 .BR COLORTERM ", " TERM
 The color depth.
@@ -330,11 +333,11 @@ and
 .BR \-version .
 .TP
 .B 1
-An error: a file could not be read, the configuration file is invalid, or a
-flag was given a value it does not accept.
+An error: a file could not be read, or the configuration file is invalid.
 .TP
 .B 2
-The command line could not be parsed.
+The command line could not be parsed, or a flag was given a value it does not
+accept.
 .SH EXAMPLES
 Read a file in the pager:
 .PP

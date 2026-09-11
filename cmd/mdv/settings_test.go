@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,6 +119,14 @@ func TestConfigErrors(t *testing.T) {
 		{"version\n", ":1:", "command line"},
 		{"caps = true\n", ":1:", "command line"},
 		{"config = /etc/other\n", ":1:", "command line"},
+		// Values the flag itself rejects, rather than ones that fail to parse
+		// as a number, used to surface later without the file or line.
+		{"width = 70\n\ntheme = solarized\n", ":3:", `unknown theme "solarized"`},
+		{"color = 8\n", ":1:", `unknown color mode "8"`},
+		{"links = sideways\n", ":1:", `unknown link mode "sideways"`},
+		{"images = iterm\n", ":1:", `unknown image mode "iterm"`},
+		{"frontmatter = yaml\n", ":1:", `unknown frontmatter mode "yaml"`},
+		{"pager = maybe\n", ":1:", `unknown pager mode "maybe"`},
 	}
 	for _, tt := range tests {
 		_, err := runWithConfig(t, tt.config, doc)
@@ -135,13 +144,6 @@ func TestConfigErrors(t *testing.T) {
 		if errors.As(err, &uerr) {
 			t.Errorf("%q: reported as a usage error", tt.config)
 		}
-	}
-}
-
-func TestConfigValuesAreValidated(t *testing.T) {
-	doc := writeTemp(t, "doc.md", "text\n")
-	if _, err := runWithConfig(t, "theme = solarized\n", doc); err == nil {
-		t.Error("an unknown theme in the file should fail like it does on the command line")
 	}
 }
 
@@ -223,6 +225,51 @@ func TestBadFlagIsAUsageError(t *testing.T) {
 	// The flag package prints the complaint itself; main relies on that.
 	if !strings.Contains(stderr, "no-such-flag") {
 		t.Errorf("stderr should explain the problem: %q", stderr)
+	}
+}
+
+func TestBadFlagValueIsAUsageError(t *testing.T) {
+	for _, name := range []string{"theme", "color", "links", "images", "frontmatter", "pager"} {
+		_, stderr, err := runCLI(t, "-"+name, "bogus")
+		var uerr usageError
+		if !errors.As(err, &uerr) {
+			t.Errorf("-%s bogus: want a usage error, got %v", name, err)
+			continue
+		}
+		if !strings.Contains(stderr, `"bogus"`) || !strings.Contains(stderr, "-"+name) {
+			t.Errorf("-%s bogus: stderr should name the flag and the value: %q", name, stderr)
+		}
+	}
+}
+
+// TestChoiceFlagsAcceptWhatTheyAdvertise holds the help text to the values
+// each flag really takes, so the list a user copies from cannot drift from
+// the parser behind it.
+func TestChoiceFlagsAcceptWhatTheyAdvertise(t *testing.T) {
+	var cfg config
+	fs := newFlagSet(&cfg, io.Discard)
+	checked := 0
+	fs.VisitAll(func(f *flag.Flag) {
+		if _, ok := f.Value.(choiceValue); !ok {
+			return
+		}
+		checked++
+		_, list, ok := strings.Cut(f.Usage, ": ")
+		if !ok {
+			t.Errorf("-%s: usage %q does not list its values", f.Name, f.Usage)
+			return
+		}
+		for _, v := range strings.Split(list, ", ") {
+			if err := fs.Set(f.Name, v); err != nil {
+				t.Errorf("-%s advertises %q but rejects it: %v", f.Name, v, err)
+			}
+		}
+		if err := fs.Set(f.Name, f.DefValue); err != nil {
+			t.Errorf("-%s rejects its own default %q: %v", f.Name, f.DefValue, err)
+		}
+	})
+	if checked == 0 {
+		t.Error("no choice flags found")
 	}
 }
 

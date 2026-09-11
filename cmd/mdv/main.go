@@ -205,16 +205,27 @@ func newFlagSet(cfg *config, stderr io.Writer) *flag.FlagSet {
 	fs.SetOutput(stderr)
 	fs.IntVar(&cfg.width, "width", 0, "layout width in columns (0 = detect)")
 	fs.IntVar(&cfg.width, "w", 0, "shorthand for -width")
-	fs.StringVar(&cfg.themeName, "theme", "auto", "color theme: "+strings.Join(theme.Names(), ", "))
-	fs.StringVar(&cfg.colorName, "color", "auto", "color depth: auto, none, 16, 256, truecolor")
-	fs.StringVar(&cfg.linkName, "links", "auto", "link display: auto, inline, hide")
+	choiceFlag(fs, &cfg.themeName, "theme", "auto",
+		"color theme `name`: "+strings.Join(theme.Names(), ", "), accepts(theme.Get))
+	choiceFlag(fs, &cfg.colorName, "color", "auto",
+		"color `depth`: auto, none, 16, 256, truecolor", accepts(func(s string) (theme.ColorMode, error) {
+			return resolveColor(s, term.Caps{})
+		}))
+	choiceFlag(fs, &cfg.linkName, "links", "auto",
+		"link display `mode`: auto, inline, hide", accepts(render.ParseLinkMode))
 	fs.BoolVar(&cfg.ascii, "ascii", false, "use ASCII instead of Unicode box drawing")
-	fs.StringVar(&cfg.images, "images", "auto", "image drawing: auto, none, kitty, sixel")
+	choiceFlag(fs, &cfg.images, "images", "auto",
+		"image drawing `mode`: auto, none, kitty, sixel", func(s string) error {
+			_, _, err := graphics.ParseProtocol(s)
+			return err
+		})
 	fs.BoolVar(&cfg.remoteImg, "remote-images", false, "fetch images over http, off by default")
 	fs.StringVar(&cfg.vaultDir, "vault", "", "Obsidian vault root (default: found from the document)")
 	fs.BoolVar(&cfg.noVault, "no-vault", false, "do not resolve [[wikilinks]] against a vault")
-	fs.StringVar(&cfg.frontStr, "frontmatter", "meta", "YAML frontmatter: meta, hide, raw")
-	fs.StringVar(&cfg.pagerMode, "pager", "auto", "interactive pager: auto, always, never")
+	choiceFlag(fs, &cfg.frontStr, "frontmatter", "meta",
+		"YAML frontmatter `mode`: meta, hide, raw", accepts(render.ParseFrontmatterMode))
+	choiceFlag(fs, &cfg.pagerMode, "pager", "auto",
+		"interactive pager `mode`: auto, always, never", accepts(parsePagerMode))
 	fs.BoolVar(&cfg.showCaps, "caps", false, "report what the terminal supports and exit")
 	fs.BoolVar(&cfg.noProbe, "no-probe", false, "do not query the terminal; use the environment alone")
 	fs.DurationVar(&cfg.probeWait, "probe-timeout", term.DefaultProbeTimeout, "how long to wait for the terminal to answer")
@@ -223,6 +234,49 @@ func newFlagSet(cfg *config, stderr io.Writer) *flag.FlagSet {
 	fs.BoolVar(&cfg.showVer, "version", false, "print version and exit")
 	fs.Usage = func() { usage(stderr, fs) }
 	return fs
+}
+
+// choiceFlag defines a string flag that only takes the values check allows.
+//
+// The value is checked as it is set rather than when it is used, so that a
+// mistake is reported where it was made: on the command line as misuse, with
+// the usage text, and in the configuration file with the file and line.
+// Checked later, a bad theme in the file surfaced as a bare "unknown theme"
+// with nothing to say where it came from.
+func choiceFlag(fs *flag.FlagSet, p *string, name, value, usage string, check func(string) error) {
+	*p = value
+	fs.Var(choiceValue{p, check}, name, usage)
+}
+
+type choiceValue struct {
+	p     *string
+	check func(string) error
+}
+
+func (v choiceValue) String() string {
+	// The flag package calls String on a zero value to tell whether a
+	// default is worth printing.
+	if v.p == nil {
+		return ""
+	}
+	return *v.p
+}
+
+func (v choiceValue) Set(s string) error {
+	if err := v.check(s); err != nil {
+		return err
+	}
+	*v.p = s
+	return nil
+}
+
+// accepts turns a parser into a check for choiceFlag, so that a flag accepts
+// exactly what the code that later reads it understands.
+func accepts[T any](parse func(string) (T, error)) func(string) error {
+	return func(s string) error {
+		_, err := parse(s)
+		return err
+	}
 }
 
 // document is one input, loaded and ready to render.
@@ -327,10 +381,11 @@ func fileHeader(name string, width int, th *theme.Theme) render.Line {
 // Paging needs a terminal to draw on, so it is off whenever output is
 // redirected - which also keeps piping into another program working.
 func usePager(mode string, caps term.Caps, out *os.File) bool {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "never", "off", "no":
+	// The flag has already rejected anything parsePagerMode does not know.
+	switch m, _ := parsePagerMode(mode); m {
+	case pagerNever:
 		return false
-	case "always", "yes":
+	case pagerAlways:
 		return true
 	}
 	return caps.TTY
@@ -338,11 +393,28 @@ func usePager(mode string, caps term.Caps, out *os.File) bool {
 
 // pagerRequired reports whether the user insisted on paging.
 func pagerRequired(mode string) bool {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
+	m, _ := parsePagerMode(mode)
+	return m == pagerAlways
+}
+
+type pagerMode int
+
+const (
+	pagerAuto pagerMode = iota
+	pagerNever
+	pagerAlways
+)
+
+func parsePagerMode(s string) (pagerMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "auto":
+		return pagerAuto, nil
+	case "never", "off", "no":
+		return pagerNever, nil
 	case "always", "yes":
-		return true
+		return pagerAlways, nil
 	}
-	return false
+	return pagerAuto, fmt.Errorf("unknown pager mode %q (want auto, always or never)", s)
 }
 
 // runPager displays the document interactively.
@@ -380,7 +452,12 @@ func resolveColor(name string, caps term.Caps) (theme.ColorMode, error) {
 	case "always", "force", "yes":
 		return term.ForcedColor(), nil
 	}
-	return theme.ParseColorMode(name)
+	mode, err := theme.ParseColorMode(name)
+	if err != nil {
+		// ParseColorMode lists only the depths; the flag takes auto as well.
+		return mode, fmt.Errorf("unknown color mode %q (want auto, none, 16, 256 or truecolor)", name)
+	}
+	return mode, nil
 }
 
 // resolveLinkMode decides how link destinations are shown.

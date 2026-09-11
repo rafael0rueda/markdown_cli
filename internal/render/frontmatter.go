@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 )
 
@@ -36,7 +37,7 @@ func ParseFrontmatterMode(s string) (FrontmatterMode, error) {
 type errUnknownFrontmatter string
 
 func (e errUnknownFrontmatter) Error() string {
-	return "unknown frontmatter mode " + string(e) + " (want meta, hide or raw)"
+	return "unknown frontmatter mode " + strconv.Quote(string(e)) + " (want meta, hide or raw)"
 }
 
 // metaEntry is one property from the frontmatter.

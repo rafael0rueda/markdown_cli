@@ -16,6 +16,30 @@ func TestDetectColorRespectsNoColor(t *testing.T) {
 	}
 }
 
+func TestNoColorNeedsAValue(t *testing.T) {
+	tests := []struct {
+		value string
+		set   bool
+		want  bool
+	}{
+		{"1", true, true},
+		// Any value counts, even ones that read as "no".
+		{"0", true, true},
+		{"false", true, true},
+		{"", true, false},
+		{"", false, false},
+	}
+	for _, tt := range tests {
+		t.Setenv("NO_COLOR", tt.value)
+		if !tt.set {
+			os.Unsetenv("NO_COLOR")
+		}
+		if got := noColor(); got != tt.want {
+			t.Errorf("NO_COLOR=%q (set %v): noColor() = %v, want %v", tt.value, tt.set, got, tt.want)
+		}
+	}
+}
+
 func TestDetectColorOnPipe(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("TERM", "xterm-kitty")

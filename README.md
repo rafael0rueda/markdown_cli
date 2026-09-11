@@ -129,7 +129,8 @@ of the old layout is not line 200 of the new one.
 
 When output is not a terminal, mdv emits **no escape sequences at all** — no
 color, no hyperlinks, no images. `mdv doc.md > out.txt` gives you plain text.
-Use `-color=always` to override. [`NO_COLOR`](https://no-color.org) is honoured.
+Use `-color=always` to override. A non-empty
+[`NO_COLOR`](https://no-color.org) turns color off, as the convention asks.
 
 Width is capped at 100 columns when detected from the terminal, because prose
 set much wider is measurably harder to read. `-width` overrides.
