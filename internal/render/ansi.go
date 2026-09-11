@@ -146,7 +146,7 @@ func writeLine(w stringWriter, line Line, width int, opts WriteOptions) error {
 				}
 			}
 			if link != "" {
-				if err := emit(osc8(sanitizeURL(link))); err != nil {
+				if err := emit(osc8(sanitizeURL(hyperlinkTarget(link)))); err != nil {
 					return err
 				}
 			}

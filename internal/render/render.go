@@ -25,6 +25,10 @@ type Options struct {
 	// BaseDir is the directory the document was loaded from. Relative image
 	// and link paths resolve against it.
 	BaseDir string
+	// WorkDir and HomeDir shorten the local paths shown after link text:
+	// relative to WorkDir, or with ~ for HomeDir, whichever is shortest.
+	// Empty leaves paths absolute.
+	WorkDir, HomeDir string
 	// Images draws pictures. Nil shows alt text instead.
 	Images ImageHandler
 	// Links resolves Obsidian-style wikilinks. Nil renders them as plain

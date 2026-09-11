@@ -231,6 +231,8 @@ inferred. It is the first thing to try when something renders wrongly.
 
 Everything degrades: a terminal without graphics shows alt text, one without
 OSC 8 shows the URL in parentheses, and one without color gets plain text.
+Links to local files are shown relative to where you are, so they stay short
+and can be pasted straight into a shell.
 
 Nothing is probed inside **tmux or screen** — the multiplexer intercepts the
 replies, and graphics need passthrough wrapping that is not implemented yet.

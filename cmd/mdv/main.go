@@ -167,11 +167,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
+	// Paths shown after links are shortened against these. Not knowing one
+	// only makes the paths longer.
+	workDir, _ := os.Getwd()
+	homeDir, _ := os.UserHomeDir()
+
 	// build lays the whole session out at a given width. The pager calls it
 	// again on every resize, and the streaming path calls it once.
 	build := func(w int) (*render.Doc, error) {
 		return renderAll(docs, render.Options{
 			Width:        w,
+			WorkDir:      workDir,
+			HomeDir:      homeDir,
 			Theme:        th,
 			LinkMode:     linkMode,
 			Images:       imageHandler,

@@ -184,12 +184,13 @@ func (r *renderer) linkSuffix(dest string, base theme.Style) []Run {
 	if dest == "" || r.opts.LinkMode == LinkHide {
 		return nil
 	}
-	return []Run{{Text: " (" + dest + ")", Style: base.Merge(r.th.LinkURL)}}
+	shown := displayPath(dest, r.opts.WorkDir, r.opts.HomeDir)
+	return []Run{{Text: " (" + shown + ")", Style: base.Merge(r.th.LinkURL)}}
 }
 
-// resolve turns a document-relative path into one relative to the process's
-// working directory, so links printed to the terminal are actually openable.
-// Absolute paths, URLs and fragments are left alone.
+// resolve turns a document-relative path into an absolute one, so that it
+// means the same thing to whatever opens it. Absolute paths, URLs and
+// fragments are left alone.
 func (r *renderer) resolve(dest string) string {
 	if r.opts.BaseDir == "" || dest == "" {
 		return dest
