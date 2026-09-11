@@ -34,6 +34,19 @@ and
 and comments.
 Other tags, and HTML blocks, are shown as they are written.
 .PP
+Math written in TeX between dollar signs,
+.B $E = mc^2$
+inline or
+.B $$
+on lines of its own, is shown in Unicode where that can spell it: Greek
+letters, operators, arrows, and raised and lowered digits, so the example
+reads E\~=\~mc\(S2.
+What has no such spelling stays as TeX.
+A dollar sign followed by a space, or a closing one followed by a digit, is not
+math, so prices are left alone; write
+.B \e$
+for a dollar sign that would otherwise start math.
+.PP
 When standard output is a terminal,
 .B mdv
 opens an interactive pager.

@@ -107,6 +107,7 @@ func Render(source []byte, opts Options) (*Doc, error) {
 		wikilinkExtension{},
 		commentExtension{},
 		markExtension{},
+		mathExtension{},
 	))
 	root := md.Parser().Parse(text.NewReader(source))
 
@@ -245,6 +246,8 @@ func (r *renderer) renderBlock(n ast.Node) {
 		r.rule()
 	case *ast.HTMLBlock:
 		r.htmlBlock(n)
+	case *MathBlock:
+		r.mathBlock(n)
 	case *extast.Table:
 		r.table(n)
 	case *extast.FootnoteList:

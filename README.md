@@ -23,6 +23,9 @@ and first-class support for [Obsidian](https://obsidian.md) vaults.
 - **Clickable links** via OSC 8, where the terminal supports them.
 - **The HTML READMEs use** — `<kbd>` keys, `<br>` (in table cells too),
   `<sub>`, `<sup>`, `<b>`, `<a>` and `<img>`. HTML comments are hidden.
+- **Math** — `$E = mc^2$` shows as E = mc², with Greek letters, operators and
+  small digits spelled in Unicode, and `$$` displays centered. Prices like
+  $5 and $10 are left alone.
 - **Obsidian vaults** — `![[embeds]]`, `[[wikilinks]]`, callouts, `%%comments%%`,
   `==highlights==` and YAML frontmatter. GitHub's `> [!NOTE]` alerts render as callouts too.
 - **Adapts to your terminal** by asking it what it can do, rather than guessing

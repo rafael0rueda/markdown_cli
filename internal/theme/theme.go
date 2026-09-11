@@ -137,6 +137,7 @@ type Theme struct {
 
 	Code      Style // inline code span
 	Kbd       Style // a key, from <kbd>
+	Math      Style // $math$, inline and displayed
 	CodeBlock Style // fenced/indented block background
 	CodeLang  Style // the language tag shown above a block
 	CodeLine  Style // gutter line numbers
@@ -273,6 +274,7 @@ func Dark() *Theme {
 
 		Code:      Style{FG: mochaPeach, BG: mochaSurface0},
 		Kbd:       Style{BG: mochaSurface1, Bold: true},
+		Math:      Style{FG: mochaTeal},
 		CodeBlock: Style{BG: mochaMantle},
 		CodeLang:  Style{FG: mochaOverlay1, Italic: true},
 		CodeLine:  Style{FG: mochaSurface1},
@@ -333,6 +335,7 @@ func Light() *Theme {
 
 		Code:      Style{FG: lattePeach, BG: latteSurface0},
 		Kbd:       Style{BG: latteSurface0, Bold: true},
+		Math:      Style{FG: latteTeal},
 		CodeBlock: Style{BG: latteMantle},
 		CodeLang:  Style{FG: latteOverlay1, Italic: true},
 		CodeLine:  Style{FG: latteSurface1},
@@ -381,6 +384,7 @@ func Plain() *Theme {
 		Strike:      Style{Strike: true},
 		Mark:        Style{Reverse: true},
 		Kbd:         Style{Bold: true},
+		Math:        Style{Italic: true},
 		Link:        Style{Underline: true},
 		MetaKey:     Style{Faint: true},
 		Status:      Style{Reverse: true},

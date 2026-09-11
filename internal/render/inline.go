@@ -82,6 +82,16 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 	case *extast.Strikethrough:
 		return r.inlineChildren(n, base.Merge(th.Strike), link)
 
+	case *Math:
+		text := texToUnicode(n.Source, false)
+		// A short formula is kept on one line: "x" at the end of one and
+		// "= 1" starting the next reads as two fragments. A long one still
+		// has to be free to wrap.
+		if uniWidth(text) <= r.contentWidth()/2 {
+			text = strings.ReplaceAll(text, " ", nbsp)
+		}
+		return []Run{{Text: text, Style: base.Merge(th.Math), Link: link}}
+
 	case *Mark:
 		return r.inlineChildren(n, base.Merge(th.Mark), link)
 
