@@ -18,6 +18,22 @@ or with
 the document is read from standard input.
 Several files are shown one after another, each under a header naming it.
 .PP
+The inline HTML that READMEs use is understood:
+.B <kbd>
+keys,
+.B <br>
+line breaks, including inside table cells,
+.B <sub>
+and
+.BR <sup> ,
+the text styles such as
+.BR <b> ,
+and
+.BR <a> ,
+.B <img>
+and comments.
+Other tags, and HTML blocks, are shown as they are written.
+.PP
 When standard output is a terminal,
 .B mdv
 opens an interactive pager.

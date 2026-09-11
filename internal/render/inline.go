@@ -16,11 +16,11 @@ import (
 // base is the style inherited from the enclosing block; link is the URL of the
 // enclosing anchor, if any, so nested emphasis inside a link stays clickable.
 func (r *renderer) inlineChildren(n ast.Node, base theme.Style, link string) []Run {
-	var out []Run
+	var nodes []ast.Node
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
-		out = append(out, r.inline(c, base, link)...)
+		nodes = append(nodes, c)
 	}
-	return out
+	return r.inlineNodes(nodes, base, link)
 }
 
 // inlineNodes renders an explicit list of inline nodes. Splitting a paragraph
@@ -28,8 +28,18 @@ func (r *renderer) inlineChildren(n ast.Node, base theme.Style, link string) []R
 // single node's children.
 func (r *renderer) inlineNodes(nodes []ast.Node, base theme.Style, link string) []Run {
 	var out []Run
-	for _, n := range nodes {
-		out = append(out, r.inline(n, base, link)...)
+	for i := 0; i < len(nodes); i++ {
+		// An HTML element spans several sibling nodes - the opening tag, the
+		// content, the closing tag - so it is handled here, where the
+		// siblings are in view, rather than one node at a time.
+		if raw, ok := nodes[i].(*ast.RawHTML); ok {
+			if runs, used, ok := r.html(raw, nodes[i+1:], base, link); ok {
+				out = append(out, runs...)
+				i += used
+				continue
+			}
+		}
+		out = append(out, r.inline(nodes[i], base, link)...)
 	}
 	return out
 }
@@ -104,12 +114,9 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 		return append(runs, r.linkSuffix(dest, base)...)
 
 	case *ast.RawHTML:
-		var b strings.Builder
-		for i := 0; i < n.Segments.Len(); i++ {
-			seg := n.Segments.At(i)
-			b.Write(seg.Value(r.src))
-		}
-		return []Run{{Text: b.String(), Style: base.Merge(th.HTML), Link: link}}
+		// Reached only for HTML that inlineNodes did not understand, which is
+		// shown as written.
+		return []Run{{Text: rawHTML(n, r.src), Style: base.Merge(th.HTML), Link: link}}
 
 	case *Wikilink:
 		return r.wikilink(n, base)

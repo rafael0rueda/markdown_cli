@@ -188,6 +188,10 @@ func hiddenBlock(n ast.Node, src []byte) bool {
 	switch n := n.(type) {
 	case *CommentBlock:
 		return true
+	case *ast.HTMLBlock:
+		// An HTML comment, hidden as a browser hides it. READMEs use them for
+		// notes to whoever edits the file, and for markers tools look for.
+		return n.HTMLBlockType == ast.HTMLBlockType2
 	case *ast.Paragraph:
 		// A paragraph made only of comments, and the whitespace between them.
 		sawComment := false

@@ -105,7 +105,8 @@ const splitCost = 1 << 30
 type column struct {
 	cells   [][]Run
 	tokens  [][]token
-	widths  []int // each cell's width on one line
+	widths  []int // each cell's widest line, unwrapped
+	breaks  []int // each cell's line count unwrapped: more than one after <br>
 	natural int   // the widest cell: the width that wraps nothing
 	word    int   // the longest word, below which words have to be split
 	lines   map[int]int
@@ -118,17 +119,31 @@ func newColumn(rows []tableRow, i int) *column {
 		if i < len(row.cells) {
 			runs = row.cells[i].runs
 		}
-		w := runsWidth(runs)
 		tokens := tokenize(runs)
-		c.cells = append(c.cells, runs)
-		c.tokens = append(c.tokens, tokens)
-		c.widths = append(c.widths, w)
-		c.natural = max(c.natural, w)
+		// Measured the way wrapRuns lays a line out: space counts only
+		// between words, and a <br> starts a line of its own.
+		widest, line, space, lines := 0, 0, 0, 1
 		for _, t := range tokens {
-			if !t.isSpace {
+			switch {
+			case t.isBreak:
+				line, space = 0, 0
+				lines++
+			case t.isSpace:
+				if line > 0 {
+					space = t.width
+				}
+			default:
+				line += space + t.width
+				space = 0
+				widest = max(widest, line)
 				c.word = max(c.word, t.width)
 			}
 		}
+		c.cells = append(c.cells, runs)
+		c.tokens = append(c.tokens, tokens)
+		c.widths = append(c.widths, widest)
+		c.breaks = append(c.breaks, lines)
+		c.natural = max(c.natural, widest)
 	}
 	return c
 }
@@ -142,7 +157,7 @@ func (c *column) linesAt(w int) int {
 	n := 0
 	for i, cell := range c.cells {
 		if c.widths[i] <= w {
-			n++
+			n += c.breaks[i]
 			continue
 		}
 		if lines, ok := countLines(c.tokens[i], w); ok {
