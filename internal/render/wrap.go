@@ -14,8 +14,12 @@ var hardBreak = Run{Text: "\x00break"}
 func isBreak(r Run) bool { return r.Text == hardBreak.Text }
 
 // token is one wrappable unit: a word, a stretch of whitespace, or a break.
+//
+// A word can span several runs - "`code`." is a code span and a full stop,
+// "**bold**," is bold and a comma - and it is still one word: breaking the
+// line between its parts would start the next line with the punctuation.
 type token struct {
-	run     Run
+	parts   []Run
 	width   int
 	isSpace bool
 	isBreak bool
@@ -25,6 +29,17 @@ type token struct {
 // fragment's style and link.
 func tokenize(runs []Run) []token {
 	var out []token
+	// continues reports whether the next fragment extends the last token
+	// rather than starting a new one. Only words join up: whitespace from
+	// separate runs stays separate, so that where two runs each bring a
+	// space - either side of a hidden comment - the line gets just one.
+	continues := func(space bool) bool {
+		if space || len(out) == 0 {
+			return false
+		}
+		last := &out[len(out)-1]
+		return !last.isBreak && !last.isSpace
+	}
 	for _, r := range runs {
 		if isBreak(r) {
 			out = append(out, token{isBreak: true})
@@ -40,12 +55,16 @@ func tokenize(runs []Run) []token {
 				return
 			}
 			text := cur.String()
-			out = append(out, token{
-				run:     Run{Text: text, Style: r.Style, Link: r.Link},
-				width:   uniseg.StringWidth(text),
-				isSpace: curSpace,
-			})
+			part := Run{Text: text, Style: r.Style, Link: r.Link}
+			width := uniseg.StringWidth(text)
 			cur.Reset()
+			if continues(curSpace) {
+				last := &out[len(out)-1]
+				last.parts = appendRun(last.parts, part)
+				last.width += width
+				return
+			}
+			out = append(out, token{parts: []Run{part}, width: width, isSpace: curSpace})
 		}
 		for _, ch := range r.Text {
 			space := ch == ' ' || ch == '\t'
@@ -117,46 +136,58 @@ func wrapRuns(runs []Run, width int, first, rest []Run) []Line {
 				space = 0
 			}
 			if pending != nil {
-				cur = appendRun(cur, pending.run)
+				for _, p := range pending.parts {
+					cur = appendRun(cur, p)
+				}
 				curW += pending.width
 				pending = nil
 			}
-			// A word too long for a whole line has to be broken mid-word.
-			word := t.run
-			w := t.width
-			for curW+w > width && avail() > 0 {
-				head, tail, headW := splitToWidth(word.Text, width-curW)
-				if head == "" {
-					if started {
-						// Not even one cluster fits in what is left of this
-						// line; try again on a fresh one.
-						flush()
-						continue
-					}
-					// Nothing fits even on an empty line, which happens when
-					// a double-width glyph meets a one-cell column. Emit a
-					// single cluster and overflow by a cell: the alternative
-					// is putting the whole unbroken word on one line, which
-					// overflows by far more.
-					head, tail, headW = firstCluster(word.Text)
+			if curW+t.width <= width {
+				for _, p := range t.parts {
+					cur = appendRun(cur, p)
+				}
+				curW += t.width
+				started = true
+				continue
+			}
+			// A word too long for a whole line has to be broken mid-word,
+			// wherever in its parts the line runs out.
+			for _, word := range t.parts {
+				w := uniseg.StringWidth(word.Text)
+				for curW+w > width && avail() > 0 {
+					head, tail, headW := splitToWidth(word.Text, width-curW)
 					if head == "" {
+						if started {
+							// Not even one cluster fits in what is left of this
+							// line; try again on a fresh one.
+							flush()
+							continue
+						}
+						// Nothing fits even on an empty line, which happens when
+						// a double-width glyph meets a one-cell column. Emit a
+						// single cluster and overflow by a cell: the alternative
+						// is putting the whole unbroken word on one line, which
+						// overflows by far more.
+						head, tail, headW = firstCluster(word.Text)
+						if head == "" {
+							break
+						}
+					}
+					cur = appendRun(cur, Run{Text: head, Style: word.Style, Link: word.Link})
+					curW += headW
+					started = true
+					flush()
+					word.Text = tail
+					w = uniseg.StringWidth(tail)
+					if tail == "" {
 						break
 					}
 				}
-				cur = appendRun(cur, Run{Text: head, Style: word.Style, Link: word.Link})
-				curW += headW
-				started = true
-				flush()
-				word.Text = tail
-				w = uniseg.StringWidth(tail)
-				if tail == "" {
-					break
+				if word.Text != "" {
+					cur = appendRun(cur, word)
+					curW += w
+					started = true
 				}
-			}
-			if word.Text != "" {
-				cur = appendRun(cur, word)
-				curW += w
-				started = true
 			}
 		}
 	}

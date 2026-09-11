@@ -34,6 +34,61 @@ func TestWrapBasic(t *testing.T) {
 	}
 }
 
+// TestWrapKeepsStyledWordsWhole covers words made of more than one run: a line
+// must never break between a code span or a link and the punctuation after
+// it, which would start the next line with a lone full stop.
+func TestWrapKeepsStyledWordsWhole(t *testing.T) {
+	bold := theme.Style{Bold: true}
+	runs := []Run{{Text: "run the "}, {Text: "command", Style: bold}, {Text: ". then more"}}
+	for width := 8; width <= 20; width++ {
+		for _, line := range lineTexts(wrapRuns(runs, width, nil, nil)) {
+			if strings.HasPrefix(line, ".") {
+				t.Errorf("width %d: line starts with the full stop: %q", width, line)
+			}
+		}
+	}
+
+	// The same through the parser, where the parts are a link, bold text and
+	// the separate pieces goldmark makes of an identifier at each underscore.
+	// Below the identifier's 25 cells it has to be split somewhere, so the
+	// widths start there.
+	src := "See [the link](http://x). Then **bold**, and some_long_identifier_name here.\n"
+	for width := 25; width <= 45; width++ {
+		for _, line := range strings.Split(renderText(t, src, width), "\n") {
+			if strings.HasPrefix(line, ".") || strings.HasPrefix(line, ",") || strings.HasPrefix(line, "_") {
+				t.Errorf("width %d: line starts mid-word: %q", width, line)
+			}
+		}
+	}
+}
+
+// TestWrapSplitsLongStyledWords: a word of several runs that is too long for
+// any line still has to be split to fit, with nothing lost and each piece
+// keeping its style.
+func TestWrapSplitsLongStyledWords(t *testing.T) {
+	bold := theme.Style{Bold: true}
+	runs := []Run{{Text: "x "}, {Text: "abcdef"}, {Text: "GHIJKL", Style: bold}, {Text: "mnopqr"}}
+	for width := 1; width <= 20; width++ {
+		lines := wrapRuns(runs, width, nil, nil)
+		var all strings.Builder
+		for _, l := range lines {
+			if w := l.Width(); w > width {
+				t.Errorf("width %d: %q is %d cells", width, l.Text(), w)
+			}
+			for _, r := range l.Runs {
+				all.WriteString(r.Text)
+				upper := strings.ToUpper(r.Text) == r.Text && strings.TrimSpace(r.Text) != ""
+				if upper != (r.Style == bold) {
+					t.Errorf("width %d: %q has the wrong style", width, r.Text)
+				}
+			}
+		}
+		if got := strings.ReplaceAll(all.String(), " ", ""); got != "xabcdefGHIJKLmnopqr" {
+			t.Errorf("width %d: text came out as %q", width, got)
+		}
+	}
+}
+
 func TestWrapHangingIndent(t *testing.T) {
 	first := plainRuns("- ")
 	rest := plainRuns("  ")

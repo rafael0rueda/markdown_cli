@@ -90,16 +90,142 @@ func (r *renderer) collectRows(n *extast.Table) []tableRow {
 	return rows
 }
 
-// columnWidths picks a width for each column: the natural content width where
-// it fits, shrinking the widest columns first when it does not.
-func (r *renderer) columnWidths(rows []tableRow, cols int) []int {
-	widths := make([]int, cols)
+// lineCost is how many cells of width an extra line has to save before a
+// column that could fit its content is narrowed to wrap it. It is what lets
+// one long cell - a note in a column of single words - wrap rather than set
+// the width of every row, while a column of long descriptions, where
+// narrowing would wrap row after row, keeps one line per row.
+const lineCost = 16
+
+// splitCost outweighs any number of lines, so that no word is broken while
+// some column could still wrap between words instead.
+const splitCost = 1 << 30
+
+// column holds what sizing a table column needs to know about its cells.
+type column struct {
+	cells   [][]Run
+	tokens  [][]token
+	widths  []int // each cell's width on one line
+	natural int   // the widest cell: the width that wraps nothing
+	word    int   // the longest word, below which words have to be split
+	lines   map[int]int
+}
+
+func newColumn(rows []tableRow, i int) *column {
+	c := &column{lines: map[int]int{}}
 	for _, row := range rows {
-		for i, cell := range row.cells {
-			if w := runsWidth(cell.runs); w > widths[i] {
-				widths[i] = w
+		var runs []Run
+		if i < len(row.cells) {
+			runs = row.cells[i].runs
+		}
+		w := runsWidth(runs)
+		tokens := tokenize(runs)
+		c.cells = append(c.cells, runs)
+		c.tokens = append(c.tokens, tokens)
+		c.widths = append(c.widths, w)
+		c.natural = max(c.natural, w)
+		for _, t := range tokens {
+			if !t.isSpace {
+				c.word = max(c.word, t.width)
 			}
 		}
+	}
+	return c
+}
+
+// linesAt reports how many lines the column's cells take at width w, summed
+// over its rows.
+func (c *column) linesAt(w int) int {
+	if n, ok := c.lines[w]; ok {
+		return n
+	}
+	n := 0
+	for i, cell := range c.cells {
+		if c.widths[i] <= w {
+			n++
+			continue
+		}
+		if lines, ok := countLines(c.tokens[i], w); ok {
+			n += lines
+			continue
+		}
+		n += len(wrapRuns(cell, w, nil, nil))
+	}
+	c.lines[w] = n
+	return n
+}
+
+// countLines reports how many lines wrapRuns would lay tokens out in, without
+// building them: sizing asks this of every cell at many widths, and building
+// the lines each time made a long table slow to lay out. It handles only
+// text whose words all fit the width, and reports false otherwise, leaving
+// words split mid-way to wrapRuns itself.
+func countLines(tokens []token, width int) (int, bool) {
+	lines, curW, started, pending := 0, 0, false, -1
+	for _, t := range tokens {
+		switch {
+		case t.isBreak:
+			lines++
+			curW, started, pending = 0, false, -1
+		case t.isSpace:
+			if started {
+				pending = t.width
+			}
+		default:
+			if t.width > width {
+				return 0, false
+			}
+			if started && curW+max(pending, 0)+t.width > width {
+				lines++
+				curW, pending = 0, -1
+			}
+			curW += max(pending, 0) + t.width
+			started, pending = true, -1
+		}
+	}
+	if started || lines == 0 {
+		lines++
+	}
+	return lines, true
+}
+
+// comfortable picks the width that best trades the column's width against
+// the lines that wrapping adds, without splitting a word to get there.
+func (c *column) comfortable() int {
+	rows := len(c.cells)
+	lo := max(c.word, minColWidth)
+	best, bestCost := c.natural, c.natural
+	for w := c.natural - 1; w >= lo; w-- {
+		extra := c.linesAt(w) - rows
+		// Narrower never takes fewer lines, so once even the narrowest
+		// allowed width could not win at this many lines, nothing below can.
+		if lo+extra*lineCost >= bestCost {
+			break
+		}
+		if cost := w + extra*lineCost; cost < bestCost {
+			best, bestCost = w, cost
+		}
+	}
+	return best
+}
+
+// columnWidths picks a width for each column.
+//
+// Each column starts at the width that suits its own content: its widest
+// cell, unless a few long cells are cheaper to wrap. If the table is then
+// still too wide, it is narrowed a cell at a time wherever that adds the
+// fewest lines, so that words are split only once no column can wrap between
+// words any more. Narrowing the widest column instead, as a simpler scheme
+// would, splits words in a column of identifiers while a column of prose
+// beside it could have wrapped for free.
+func (r *renderer) columnWidths(rows []tableRow, cols int) []int {
+	columns := make([]*column, cols)
+	widths := make([]int, cols)
+	total := 0
+	for i := range columns {
+		columns[i] = newColumn(rows, i)
+		widths[i] = columns[i].comfortable()
+		total += widths[i]
 	}
 
 	// Every column contributes its content plus two padding cells, and there
@@ -110,17 +236,21 @@ func (r *renderer) columnWidths(rows []tableRow, cols int) []int {
 		budget = cols * minColWidth
 	}
 
-	total := 0
-	for _, w := range widths {
-		total += w
-	}
-	// Shrinking the widest column repeatedly converges on an even split of the
-	// overflow, which reads better than scaling every column proportionally.
 	for total > budget {
-		widest, idx := 0, -1
-		for i, w := range widths {
-			if w > widest && w > minColWidth {
-				widest, idx = w, i
+		idx, bestCost := -1, 0
+		for i, c := range columns {
+			w := widths[i]
+			if w <= minColWidth {
+				continue
+			}
+			cost := c.linesAt(w-1) - c.linesAt(w)
+			if w-1 < c.word {
+				cost += splitCost
+			}
+			// On a tie the wider column gives way, which splits an overflow
+			// between columns of similar text evenly.
+			if idx < 0 || cost < bestCost || cost == bestCost && w > widths[idx] {
+				idx, bestCost = i, cost
 			}
 		}
 		if idx < 0 {
