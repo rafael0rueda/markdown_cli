@@ -320,6 +320,9 @@ func renderAll(docs []document, opts render.Options, cfg config, writeOpts rende
 			if i > 0 {
 				combined.Lines = append(combined.Lines, render.Line{})
 			}
+			combined.Headings = append(combined.Headings, render.Heading{
+				Line: len(combined.Lines), Level: 0, Text: render.Sanitize(d.name),
+			})
 			combined.Lines = append(combined.Lines, fileHeader(d.name, opts.Width, opts.Theme))
 		}
 
@@ -332,12 +335,16 @@ func renderAll(docs []document, opts render.Options, cfg config, writeOpts rende
 			return nil, fmt.Errorf("%s: %w", d.name, err)
 		}
 
-		// Image placements are line-numbered, so they have to be shifted onto
-		// their position within the combined document.
+		// Image placements and headings are line-numbered, so they have to be
+		// shifted onto their position within the combined document.
 		offset := len(combined.Lines)
 		for _, img := range doc.Images {
 			img.Line += offset
 			combined.Images = append(combined.Images, img)
+		}
+		for _, h := range doc.Headings {
+			h.Line += offset
+			combined.Headings = append(combined.Headings, h)
 		}
 		combined.Lines = append(combined.Lines, doc.Lines...)
 	}

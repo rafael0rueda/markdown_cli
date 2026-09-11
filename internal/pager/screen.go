@@ -27,6 +27,15 @@ const (
 	// expires, and cancelling a search feels sluggish.
 	pushKittyKeyboard = "\x1b[>1u"
 	popKittyKeyboard  = "\x1b[<u"
+
+	// Alternate scroll mode has the terminal send the arrow keys for the
+	// mouse wheel while the alternate screen is up, so the wheel scrolls the
+	// document. Most terminals, kitty among them, do that anyway; xterm needs
+	// asking. It is used rather than mouse reporting, which would scroll too
+	// but take away selecting text and clicking links. The setting is saved
+	// and restored rather than switched off, since it may have been on.
+	enableAltScroll  = "\x1b[?1007s\x1b[?1007h"
+	restoreAltScroll = "\x1b[?1007r"
 )
 
 // ErrNoTerminal reports that there is no terminal to page on.
@@ -77,6 +86,7 @@ func newScreen(tty *os.File, kittyKeyboard bool) (*screen, error) {
 	s := &screen{tty: tty, out: bufio.NewWriterSize(tty, 64<<10), state: state, ownTTY: true}
 	s.out.WriteString(enterAltScreen)
 	s.out.WriteString(hideCursor)
+	s.out.WriteString(enableAltScroll)
 	if kittyKeyboard {
 		s.out.WriteString(pushKittyKeyboard)
 		s.kittyKeyboard = true
@@ -104,6 +114,7 @@ func (s *screen) close() {
 	if s.kittyKeyboard {
 		s.out.WriteString(popKittyKeyboard)
 	}
+	s.out.WriteString(restoreAltScroll)
 	s.out.WriteString(showCursor)
 	s.out.WriteString(leaveAltScreen)
 	s.out.Flush()

@@ -18,10 +18,23 @@ func (p *pager) draw() error {
 		out.WriteString(p.opts.Images.ClearPlacements())
 	}
 
-	p.drawText()
+	switch p.view {
+	case viewHelp:
+		lines := p.helpLines()
+		// A window that has grown since the help was scrolled may now show
+		// all of it.
+		p.helpTop = min(p.helpTop, max(len(lines)-p.viewHeight(), 0))
+		p.drawLines(lines, p.helpTop, p.width, nil)
+	case viewContents:
+		p.drawLines(p.contentsLines(), p.contents.top, p.width, nil)
+	default:
+		p.drawText()
+	}
 	p.drawStatus()
 
-	if p.opts.Images != nil {
+	// Pictures belong to the document, so they are left off while another
+	// screen is shown in its place.
+	if p.opts.Images != nil && p.view == viewDocument {
 		p.drawImages()
 	}
 
@@ -33,27 +46,35 @@ func (p *pager) draw() error {
 
 // drawText writes the visible document lines.
 func (p *pager) drawText() {
-	view := p.viewHeight()
-	query := ""
+	var highlight func(render.Line) render.Line
 	if p.search.active() {
-		query = p.search.highlightQuery()
+		query := p.search.highlightQuery()
+		highlight = func(line render.Line) render.Line {
+			if ranges := render.LineMatches(line, query); len(ranges) > 0 {
+				return render.Highlight(line, ranges, p.opts.Theme.SearchMatch)
+			}
+			return line
+		}
 	}
+	p.drawLines(p.doc.Lines, p.top, p.doc.Width, highlight)
+}
 
-	for row := 0; row < view; row++ {
+// drawLines fills the view with lines from top on, blanking rows past the
+// end. highlight, if set, can restyle each line on its way out.
+func (p *pager) drawLines(lines []render.Line, top, width int, highlight func(render.Line) render.Line) {
+	for row := 0; row < p.viewHeight(); row++ {
 		p.screen.moveTo(row, 0)
 		p.screen.out.WriteString(clearLine)
 
-		index := p.top + row
-		if index >= len(p.doc.Lines) {
+		index := top + row
+		if index >= len(lines) {
 			continue
 		}
-		line := p.doc.Lines[index]
-		if query != "" {
-			if ranges := render.LineMatches(line, query); len(ranges) > 0 {
-				line = render.Highlight(line, ranges, p.opts.Theme.SearchMatch)
-			}
+		line := lines[index]
+		if highlight != nil {
+			line = highlight(line)
 		}
-		p.screen.out.WriteString(render.RenderLine(line, p.doc.Width, p.opts.Write))
+		p.screen.out.WriteString(render.RenderLine(line, width, p.opts.Write))
 	}
 }
 

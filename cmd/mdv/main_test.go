@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -646,6 +647,38 @@ func TestRenderAllShiftsImageLines(t *testing.T) {
 	// The rows it points at have to be the reserved blank ones.
 	if got := strings.TrimSpace(doc.Lines[img.Line+1].Text()); got != "" {
 		t.Errorf("line %d should be reserved for the image, got %q", img.Line+1, got)
+	}
+}
+
+// TestHeadingsAcrossFiles: with several files, each file's name heads its
+// own headings in the table of contents, and every heading points at its
+// line in the combined document.
+func TestHeadingsAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.md")
+	second := filepath.Join(dir, "second.md")
+	os.WriteFile(first, []byte("# One\n\ntext\n\n## Deeper\n"), 0o644)
+	os.WriteFile(second, []byte("# Two\n"), 0o644)
+
+	docs, err := loadInputs([]string{first, second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := renderAll(docs, render.Options{Width: 60, Theme: theme.Plain()}, config{}, render.WriteOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for _, h := range doc.Headings {
+		got = append(got, fmt.Sprintf("%d %s", h.Level, filepath.Base(h.Text)))
+		if line := doc.Lines[h.Line].Text(); !strings.Contains(line, filepath.Base(h.Text)) {
+			t.Errorf("%q points at line %d, which is %q", h.Text, h.Line, line)
+		}
+	}
+	want := "0 first.md|1 One|2 Deeper|0 second.md|1 Two"
+	if strings.Join(got, "|") != want {
+		t.Errorf("headings = %q, want %q", strings.Join(got, "|"), want)
 	}
 }
 

@@ -194,3 +194,24 @@ func TestMalformedInput(t *testing.T) {
 		}
 	}
 }
+
+func TestHeadingsAreRecorded(t *testing.T) {
+	src := "---\ntitle: x\n---\n# Title\n\nText.\n\n## Part *one*\n\n> ### Quoted\n\nMore.\n"
+	doc, err := Render([]byte(src), Options{Width: 60, Theme: theme.Plain()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Heading{{Level: 1, Text: "Title"}, {Level: 2, Text: "Part one"}, {Level: 3, Text: "Quoted"}}
+	if len(doc.Headings) != len(want) {
+		t.Fatalf("got %+v", doc.Headings)
+	}
+	for i, h := range doc.Headings {
+		if h.Level != want[i].Level || h.Text != want[i].Text {
+			t.Errorf("heading %d = %+v, want %+v", i, h, want[i])
+		}
+		// Line has to point at the heading as drawn, frontmatter and all.
+		if line := doc.Lines[h.Line].Text(); !strings.Contains(line, h.Text) {
+			t.Errorf("heading %q points at line %d, which is %q", h.Text, h.Line, line)
+		}
+	}
+}

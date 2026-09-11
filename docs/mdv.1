@@ -197,8 +197,10 @@ name and position.
 Resizing the window lays the document out again at the new width, keeping the
 reading position.
 .TP
-.BR j ", " k ", " Down ", " Up
+.BR j ", " k ", " Down ", " Up ", mouse wheel"
 Scroll one line.
+The wheel works by having the terminal send the arrow keys for it, so the
+mouse is not captured and selecting text and clicking links work as usual.
 .TP
 .BR d ", " u
 Scroll half a screen.
@@ -208,6 +210,24 @@ Scroll a screen.
 .TP
 .BR g ", " G ", " Home ", " End
 Jump to the start or the end.
+.TP
+.BR ] ", " [
+Jump to the next or previous heading.
+.TP
+.B t
+Show the table of contents, a line per heading with the one being read
+selected.
+.BR j ,
+.BR k ,
+the arrows and the other scrolling keys move the selection,
+.B Enter
+jumps to it, and
+.BR Esc ,
+.B q
+or
+.B t
+closes it.
+With several files, each file's name heads its own headings.
 .TP
 .B /
 Search.
@@ -219,6 +239,11 @@ cancels.
 .TP
 .BR n ", " N
 Jump to the next or previous match.
+.TP
+.B ?
+Show the keys.
+Any key closes the list, except the scrolling keys, which scroll it when the
+window is too short to show all of it.
 .TP
 .BR q ", " Ctrl\-C
 Quit.

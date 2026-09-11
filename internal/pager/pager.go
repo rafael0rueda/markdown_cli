@@ -60,6 +60,12 @@ type pager struct {
 	search  searchState
 	message string
 	quit    bool
+
+	// view is what is on screen: the document, the help, or the table of
+	// contents.
+	view     view
+	helpTop  int
+	contents contents
 }
 
 // statusRows is the number of rows reserved at the bottom of the screen.
@@ -132,6 +138,9 @@ func (p *pager) layout() error {
 
 	p.top = int(fraction * float64(len(doc.Lines)))
 	p.clampScroll()
+	if p.view == viewContents {
+		p.keepSelectionVisible()
+	}
 	return nil
 }
 
@@ -187,35 +196,42 @@ func (p *pager) handleKey(k key) {
 		p.handleSearchKey(k)
 		return
 	}
+	if k.Ctrl && (k.Rune == 'c' || k.Rune == 'd') {
+		p.quit = true
+		return
+	}
 
 	p.message = ""
-	half := max(p.viewHeight()/2, 1)
+	switch p.view {
+	case viewHelp:
+		p.handleHelpKey(k)
+		return
+	case viewContents:
+		p.handleContentsKey(k)
+		return
+	}
 
+	if delta, ok := scrollAmount(k, p.viewHeight()); ok {
+		p.scroll(delta)
+		return
+	}
 	switch {
-	case k.Ctrl && k.Rune == 'c', k.Ctrl && k.Rune == 'd':
-		p.quit = true
 	case k.Name == keyRune && k.Rune == 'q':
 		p.quit = true
-
-	case k.Name == keyDown, k.Rune == 'j':
-		p.scroll(1)
-	case k.Name == keyUp, k.Rune == 'k':
-		p.scroll(-1)
-
-	case k.Name == keyPageDown, k.Rune == ' ', k.Ctrl && k.Rune == 'f':
-		p.scroll(p.viewHeight())
-	case k.Name == keyPageUp, k.Rune == 'b', k.Ctrl && k.Rune == 'b':
-		p.scroll(-p.viewHeight())
-
-	case k.Rune == 'd':
-		p.scroll(half)
-	case k.Rune == 'u':
-		p.scroll(-half)
 
 	case k.Name == keyHome, k.Rune == 'g':
 		p.top = 0
 	case k.Name == keyEnd, k.Rune == 'G':
 		p.top = p.maxTop()
+
+	case k.Rune == ']':
+		p.jumpHeading(1)
+	case k.Rune == '[':
+		p.jumpHeading(-1)
+	case k.Rune == 't':
+		p.openContents()
+	case k.Rune == '?':
+		p.view, p.helpTop = viewHelp, 0
 
 	case k.Rune == '/':
 		p.search.begin()
@@ -290,6 +306,15 @@ func (p *pager) statusText() string {
 	if p.message != "" {
 		return p.message
 	}
+	switch p.view {
+	case viewHelp:
+		if len(p.helpLines()) > p.viewHeight() {
+			return "Keys  ·  j/k scroll  any other key closes"
+		}
+		return "Keys  ·  any key closes"
+	case viewContents:
+		return "Contents  ·  j/k move  Enter go  Esc close"
+	}
 
 	position := "all"
 	if p.maxTop() > 0 {
@@ -307,7 +332,7 @@ func (p *pager) statusText() string {
 	if title == "" {
 		title = "mdv"
 	}
-	return fmt.Sprintf("%s  %s  ·  j/k scroll  / search  q quit", title, position)
+	return fmt.Sprintf("%s  %s  ·  j/k scroll  / search  ? help  q quit", title, position)
 }
 
 // truncateToWidth cuts a string to fit the given number of columns.

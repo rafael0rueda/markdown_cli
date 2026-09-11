@@ -116,14 +116,20 @@ turns it off.
 
 | Key | Does |
 |-----|------|
-| `j` `k`, `↓` `↑` | Scroll a line |
+| `j` `k`, `↓` `↑`, mouse wheel | Scroll a line |
 | `d` `u` | Scroll half a screen |
 | `space` `b`, `PgDn` `PgUp` | Scroll a screen |
 | `g` `G`, `Home` `End` | Jump to the start or end |
+| `]` `[` | Next and previous heading |
+| `t` | Table of contents: move with `j` `k`, `Enter` to go there |
 | `/` | Search; matches highlight as you type |
 | `n` `N` | Next and previous match |
 | `Esc` | Cancel the search prompt |
+| `?` | Show these keys |
 | `q`, `Ctrl-C` | Quit |
+
+The wheel works without mdv taking over the mouse, so selecting text and
+clicking links behave as they always do.
 
 Resizing the window re-lays out the document, so wrapping, table widths and
 image sizes all follow. The scroll position is kept as a fraction rather than a

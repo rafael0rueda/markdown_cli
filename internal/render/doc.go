@@ -90,9 +90,24 @@ type Doc struct {
 	Lines []Line
 	// Images are the pictures to draw, in document order.
 	Images []Image
+	// Headings are the document's headings, in order, for moving between
+	// them.
+	Headings []Heading
 	// Width is the column count the document was laid out for. Fills and
 	// centered elements are measured against it.
 	Width int
+}
+
+// Heading is a heading's place in the laid-out document.
+type Heading struct {
+	// Line is the index of the heading's first line.
+	Line int
+	// Level is 1 for a top-level heading through 6. Something above the
+	// document's own headings, such as the name of one of several files,
+	// is level 0.
+	Level int
+	// Text is the heading as plain text.
+	Text string
 }
 
 // ImageAt returns the image starting at the given line, if there is one.

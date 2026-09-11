@@ -645,3 +645,191 @@ func TestPagerSkipsOffscreenImages(t *testing.T) {
 		t.Errorf("an image far above the view was still drawn: %+v", call)
 	}
 }
+
+// --- navigation ---
+
+// sectionedDoc builds a document of headed sections, each long enough that
+// one screen shows only one heading.
+func sectionedDoc(sections int) string {
+	var b strings.Builder
+	for i := 1; i <= sections; i++ {
+		fmt.Fprintf(&b, "## Section %d\n\n", i)
+		for j := 1; j <= 15; j++ {
+			fmt.Fprintf(&b, "Section %d, line %02d\n\n", i, j)
+		}
+	}
+	return b.String()
+}
+
+// topLine is the first row of the screen, where a jump puts its heading.
+func (s *session) topLine() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return strings.TrimSpace(s.term.line(0))
+}
+
+func TestPagerJumpsBetweenHeadings(t *testing.T) {
+	s := startSession(t, sectionedDoc(4), 60, 12, nil)
+	defer s.quit()
+
+	for _, step := range []struct{ keys, want string }{
+		{"]", "## Section 2"},
+		{"]", "## Section 3"},
+		{"[", "## Section 2"},
+		{"[", "## Section 1"},
+	} {
+		s.send(step.keys)
+		if got := s.topLine(); got != step.want {
+			t.Fatalf("after %q the top line is %q, want %q", step.keys, got, step.want)
+		}
+	}
+	s.send("[")
+	if got := s.status(); !strings.Contains(got, "no earlier headings") {
+		t.Errorf("status = %q", got)
+	}
+}
+
+// TestPagerHeadingJumpAtTheEnd: the last heading is on screen with nowhere
+// further to scroll, so ] says so instead of silently doing nothing.
+func TestPagerHeadingJumpAtTheEnd(t *testing.T) {
+	s := startSession(t, sectionedDoc(3), 60, 12, nil)
+	defer s.quit()
+
+	s.send("G")
+	s.send("]")
+	if got := s.status(); !strings.Contains(got, "no more headings") {
+		t.Errorf("status = %q", got)
+	}
+}
+
+func TestPagerContents(t *testing.T) {
+	s := startSession(t, "# Guide\n\n"+sectionedDoc(3), 60, 12, nil)
+	defer s.quit()
+
+	s.send("t")
+	screen := s.screen()
+	for _, want := range []string{"Guide", "Section 1", "Section 3"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("contents lack %q:\n%s", want, screen)
+		}
+	}
+	if strings.Contains(screen, "line 01") {
+		t.Errorf("the document is still showing under the contents:\n%s", screen)
+	}
+	if got := s.status(); !strings.Contains(got, "Contents") {
+		t.Errorf("status = %q", got)
+	}
+	// Sections are indented under the title they belong to.
+	if !strings.Contains(screen, "   Section 1") {
+		t.Errorf("second-level headings are not indented:\n%s", screen)
+	}
+
+	s.send("jjj\r") // the cursor starts on the title; three down is Section 3
+	if got := s.topLine(); got != "## Section 3" {
+		t.Errorf("Enter should jump to the chosen heading; top line is %q", got)
+	}
+}
+
+// TestPagerContentsStartAtTheCurrentSection puts the cursor on what is being
+// read, so Enter alone goes nowhere unexpected.
+func TestPagerContentsStartAtTheCurrentSection(t *testing.T) {
+	s := startSession(t, sectionedDoc(4), 60, 12, nil)
+	defer s.quit()
+
+	s.send("]]j") // into section 3
+	s.send("t\r")
+	if got := s.topLine(); got != "## Section 3" {
+		t.Errorf("top line is %q, want section 3's heading", got)
+	}
+}
+
+func TestPagerContentsClose(t *testing.T) {
+	s := startSession(t, sectionedDoc(2), 60, 12, nil)
+	defer s.quit()
+
+	for _, key := range []string{"\x1b", "q", "t"} {
+		s.send("t")
+		s.send(key)
+		if got := s.screen(); !strings.Contains(got, "Section 1, line 01") {
+			t.Errorf("%q should close the contents:\n%s", key, got)
+		}
+	}
+}
+
+func TestPagerContentsWithoutHeadings(t *testing.T) {
+	s := startSession(t, numberedDoc(30), 60, 12, nil)
+	defer s.quit()
+
+	s.send("t")
+	if got := s.status(); !strings.Contains(got, "no headings") {
+		t.Errorf("status = %q", got)
+	}
+	if got := s.screen(); !strings.Contains(got, "Line 001") {
+		t.Errorf("the document should still be showing:\n%s", got)
+	}
+}
+
+func TestPagerHelp(t *testing.T) {
+	s := startSession(t, numberedDoc(30), 70, 24, nil)
+	defer s.quit()
+
+	if got := s.status(); !strings.Contains(got, "? help") {
+		t.Errorf("the status line should mention help: %q", got)
+	}
+	s.send("?")
+	screen := s.screen()
+	for _, want := range []string{"Scroll a line", "Next or previous heading", "Table of contents", "Quit"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("help lacks %q:\n%s", want, screen)
+		}
+	}
+
+	// q closes the help rather than quitting from under it.
+	s.send("q")
+	select {
+	case <-s.done:
+		t.Fatal("q in the help quit the pager")
+	default:
+	}
+	if got := s.screen(); !strings.Contains(got, "Line 001") {
+		t.Errorf("the document should be back:\n%s", got)
+	}
+}
+
+// TestPagerHelpScrollsInASmallWindow: in a window shorter than the help, the
+// scrolling keys scroll it instead of closing it.
+func TestPagerHelpScrollsInASmallWindow(t *testing.T) {
+	s := startSession(t, numberedDoc(30), 70, 8, nil)
+	defer s.quit()
+
+	s.send("?")
+	if strings.Contains(s.screen(), "Quit") {
+		t.Skip("the help fits this window after all")
+	}
+	s.send("jjjjjjjjjjjjjjjjjjjj")
+	if got := s.screen(); !strings.Contains(got, "Quit") {
+		t.Errorf("scrolling should reach the end of the help:\n%s", got)
+	}
+	s.send("g")
+	if got := s.screen(); strings.Contains(got, "Quit") || !strings.Contains(got, "Scroll a line") {
+		t.Errorf("g should go back to the start of the help:\n%s", got)
+	}
+	s.send("x")
+	if got := s.screen(); !strings.Contains(got, "Line 001") {
+		t.Errorf("any other key should close the help:\n%s", got)
+	}
+}
+
+func TestPagerEnablesWheelScrolling(t *testing.T) {
+	s := startSession(t, numberedDoc(10), 60, 12, nil)
+	if err := s.quit(); err != nil {
+		t.Fatal(err)
+	}
+	s.settle()
+
+	raw := s.rawOutput()
+	on, off := strings.Index(raw, enableAltScroll), strings.Index(raw, restoreAltScroll)
+	if on < 0 || off < 0 || off < on {
+		t.Errorf("alternate scroll should be enabled on entry and restored on exit")
+	}
+}

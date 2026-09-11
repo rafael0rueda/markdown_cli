@@ -279,8 +279,27 @@ func (r *renderer) heading(n *ast.Heading) {
 		Text:  strings.Repeat("#", level) + " ",
 		Style: theme.Style{FG: style.FG, Faint: true},
 	}
-	runs := append([]Run{marker}, r.inlineChildren(n, r.base.Merge(style), "")...)
-	r.emit(runs)
+	content := r.inlineChildren(n, r.base.Merge(style), "")
+	r.doc.Headings = append(r.doc.Headings, Heading{
+		Line:  len(r.doc.Lines),
+		Level: level,
+		Text:  plainRunsText(content),
+	})
+	r.emit(append([]Run{marker}, content...))
+}
+
+// plainRunsText joins the text of runs as one line, with any line breaks in
+// them read as spaces.
+func plainRunsText(runs []Run) string {
+	var b strings.Builder
+	for _, run := range runs {
+		if isBreak(run) {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteString(run.Text)
+	}
+	return strings.Join(strings.Fields(strings.ReplaceAll(b.String(), nbsp, " ")), " ")
 }
 
 func (r *renderer) blockquote(n *ast.Blockquote) {
