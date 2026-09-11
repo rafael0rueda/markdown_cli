@@ -22,3 +22,11 @@ An embed 🖼 inline.png inside a sentence stays as text.
 
 Ordinary markdown still works: a link (https://example.com) and 🖼 an image
 (pic.png).
+
+▌ ⚠ Setuid binaries
+▌ Run with the owner's privileges, whoever starts them.
+
+▌ ✦ Tip
+▌ GitHub alerts use the same syntax.
+
+The end.

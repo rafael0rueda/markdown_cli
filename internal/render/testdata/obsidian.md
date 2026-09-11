@@ -23,3 +23,17 @@ An embed ![[inline.png]] inside a sentence stays as text.
 
 Ordinary markdown still works: [a link](https://example.com) and
 ![an image](pic.png).
+
+> [!warning] Setuid binaries
+> Run with the owner's privileges, whoever starts them. %%check the sticky bit too%%
+
+> [!TIP]
+> GitHub alerts use the same syntax.
+
+%%
+A note to self that the reader never sees.
+
+It can run to several paragraphs.
+%%
+
+The end.

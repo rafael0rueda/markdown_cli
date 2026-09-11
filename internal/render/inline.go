@@ -111,6 +111,9 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 	case *Wikilink:
 		return r.wikilink(n, base)
 
+	case *Comment:
+		return nil
+
 	case *extast.TaskCheckBox:
 		style, glyph := th.TaskTodo, th.Glyphs.TaskTodo
 		if n.IsChecked {

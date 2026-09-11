@@ -271,6 +271,31 @@ set in
 then the note's own folder, then the vault root, then anywhere in the vault by
 name, preferring the shallowest match.
 A link or embed that resolves to nothing still shows its label.
+.PP
+Two more pieces of Obsidian syntax work in any document, inside a vault or
+not:
+.TP
+.B > [!warning] Title
+A callout: a blockquote drawn with a bar and a bold title in the kind's color,
+and an icon.
+Obsidian's kinds and their aliases are recognized
+.RB ( note ,
+.BR tip ,
+.BR warning ,
+.BR danger ,
+.BR faq ,
+and the rest); unknown kinds are drawn as notes.
+GitHub's alerts, such as
+.BR ">\~[!NOTE]" ,
+use the same syntax and render the same way.
+.TP
+.B %%comment%%
+Hidden, whether inline or spanning several paragraphs between lines holding
+only
+.BR %% .
+Inside code it is left alone, and a
+.B %%
+that is never closed is shown rather than hiding the rest of the document.
 .SH ENVIRONMENT
 .TP
 .B MDV_CONFIG

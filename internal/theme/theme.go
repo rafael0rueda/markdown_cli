@@ -31,6 +31,11 @@ type Glyphs struct {
 	TableTopT    string
 	TableBottomT string
 	TableCross   string
+
+	// CalloutIcons marks each kind of callout, keyed by its canonical name
+	// ("note", "warning", ...). Symbols with an emoji presentation are avoided,
+	// since terminals disagree on whether those take one cell or two.
+	CalloutIcons map[string]string
 }
 
 // UnicodeGlyphs is the default glyph set.
@@ -54,6 +59,21 @@ var UnicodeGlyphs = Glyphs{
 	TableTopT:    "┬",
 	TableBottomT: "┴",
 	TableCross:   "┼",
+	CalloutIcons: map[string]string{
+		"note":     "✎",
+		"abstract": "≡",
+		"info":     "ⓘ",
+		"todo":     "☐",
+		"tip":      "✦",
+		"success":  "✓",
+		"question": "?",
+		"warning":  "⚠",
+		"failure":  "✗",
+		"danger":   "ϟ",
+		"bug":      "✱",
+		"example":  "☰",
+		"quote":    "❝",
+	},
 }
 
 // ASCIIGlyphs is the fallback for terminals without dependable Unicode.
@@ -77,6 +97,21 @@ var ASCIIGlyphs = Glyphs{
 	TableTopT:    "+",
 	TableBottomT: "+",
 	TableCross:   "+",
+	CalloutIcons: map[string]string{
+		"note":     "*",
+		"abstract": "=",
+		"info":     "i",
+		"todo":     "[ ]",
+		"tip":      "+",
+		"success":  "v",
+		"question": "?",
+		"warning":  "!",
+		"failure":  "x",
+		"danger":   "!!",
+		"bug":      "#",
+		"example":  "-",
+		"quote":    "\"",
+	},
 }
 
 // Theme is the complete set of styles the renderer draws with. Every field is
@@ -129,6 +164,10 @@ type Theme struct {
 	MetaKey   Style
 	MetaValue Style
 
+	// Callouts colors Obsidian callouts and GitHub alerts, keyed by canonical
+	// kind. The bar and icon take the style as it is; the title adds bold.
+	Callouts map[string]Style
+
 	// Status is the pager's bar along the bottom of the screen, and
 	// SearchMatch marks the text a search found.
 	Status      Style
@@ -154,6 +193,7 @@ var (
 	mochaSurface0 = Hex("#313244")
 	mochaMantle   = Hex("#181825")
 	mochaYellow   = Hex("#f9e2af")
+	mochaSubtext1 = Hex("#bac2de")
 )
 
 // Catppuccin Latte, used for the light theme.
@@ -174,7 +214,30 @@ var (
 	latteSurface0 = Hex("#ccd0da")
 	latteMantle   = Hex("#e6e9ef")
 	latteYellow   = Hex("#df8e1d")
+	latteRed      = Hex("#d20f39")
 )
+
+// calloutStyles assigns each callout kind a color the way Obsidian does: blue
+// for notes and information, cyan for summaries and tips, green for success,
+// orange for questions, yellow for warnings, red for failures, dangers and
+// bugs, purple for examples, and grey for quotations.
+func calloutStyles(blue, cyan, green, orange, yellow, red, purple, grey Color) map[string]Style {
+	return map[string]Style{
+		"note":     {FG: blue},
+		"abstract": {FG: cyan},
+		"info":     {FG: blue},
+		"todo":     {FG: blue},
+		"tip":      {FG: cyan},
+		"success":  {FG: green},
+		"question": {FG: orange},
+		"warning":  {FG: yellow},
+		"failure":  {FG: red},
+		"danger":   {FG: red},
+		"bug":      {FG: red},
+		"example":  {FG: purple},
+		"quote":    {FG: grey},
+	}
+}
 
 // Dark returns the default dark theme. Body text is deliberately left unstyled
 // so it inherits the terminal's own foreground color.
@@ -225,6 +288,9 @@ func Dark() *Theme {
 
 		MetaKey:   Style{FG: mochaOverlay1},
 		MetaValue: Style{FG: mochaSubtext0},
+
+		Callouts: calloutStyles(mochaBlue, mochaTeal, mochaGreen, mochaPeach,
+			mochaYellow, mochaRed, mochaMauve, mochaSubtext1),
 
 		Status:      Style{FG: mochaSubtext0, BG: mochaSurface0},
 		SearchMatch: Style{FG: mochaMantle, BG: mochaYellow, Bold: true},
@@ -279,6 +345,9 @@ func Light() *Theme {
 
 		MetaKey:   Style{FG: latteOverlay1},
 		MetaValue: Style{FG: latteSubtext0},
+
+		Callouts: calloutStyles(latteBlue, latteTeal, latteGreen, lattePeach,
+			latteYellow, latteRed, latteMauve, latteSubtext0),
 
 		Status:      Style{FG: latteSubtext0, BG: latteSurface0},
 		SearchMatch: Style{FG: latteMantle, BG: latteYellow, Bold: true},

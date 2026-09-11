@@ -21,7 +21,8 @@ and first-class support for [Obsidian](https://obsidian.md) vaults.
 - **Inline images** using the kitty graphics protocol, with a sixel fallback
   and alt text as a last resort. PNG, JPEG, GIF, WebP, BMP and TIFF.
 - **Clickable links** via OSC 8, where the terminal supports them.
-- **Obsidian vaults** — `![[embeds]]`, `[[wikilinks]]` and YAML frontmatter.
+- **Obsidian vaults** — `![[embeds]]`, `[[wikilinks]]`, callouts, `%%comments%%`
+  and YAML frontmatter. GitHub's `> [!NOTE]` alerts render as callouts too.
 - **Adapts to your terminal** by asking it what it can do, rather than guessing
   from `TERM`.
 - **An interactive pager** — scroll, search, resize, with images that move with
@@ -178,6 +179,23 @@ vault by name, preferring the shallowest match.
 A link or embed that resolves to nothing still shows its label. Pointing at a
 note you have not written yet is a normal thing to do in a vault, and a missing
 attachment should not take the rest of the note down with it.
+
+Two more pieces of Obsidian syntax work in any document, vault or not:
+
+**Callouts** get a bar and a bold title in their kind's color, with an icon.
+All of Obsidian's kinds and aliases are recognized (`note`, `tip`, `warning`,
+`danger`, `faq`, …), unknown kinds are drawn as notes, and GitHub's alerts
+(`> [!NOTE]`, `> [!WARNING]`) use the same syntax, so they work too.
+
+```
+> [!warning] Setuid binaries          ▌ ⚠ Setuid binaries
+> Run with the owner's privileges.    ▌ Run with the owner's privileges.
+```
+
+**Comments** between `%%` markers are hidden, inline or across whole
+paragraphs, just as Obsidian hides them when reading. Inside code they are left
+alone. A `%%` that is never closed is shown rather than hiding the rest of the
+file, which is what Obsidian would do.
 
 YAML frontmatter becomes a compact aligned header instead of the two horizontal
 rules and stray bullet list that CommonMark makes of it:

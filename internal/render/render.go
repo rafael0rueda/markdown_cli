@@ -101,6 +101,7 @@ func Render(source []byte, opts Options) (*Doc, error) {
 		extension.GFM,
 		extension.Footnote,
 		wikilinkExtension{},
+		commentExtension{},
 	))
 	root := md.Parser().Parse(text.NewReader(source))
 
@@ -204,6 +205,9 @@ func (r *renderer) withPrefix(firstAdd, restAdd []Run, base theme.Style, fn func
 func (r *renderer) renderChildren(n ast.Node, tight bool) {
 	first := true
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		if hiddenBlock(c, r.src) {
+			continue
+		}
 		if !first && !tight {
 			r.blank()
 		}
@@ -272,6 +276,10 @@ func (r *renderer) heading(n *ast.Heading) {
 }
 
 func (r *renderer) blockquote(n *ast.Blockquote) {
+	if c, ok := r.detectCallout(n); ok {
+		r.calloutBlock(n, c)
+		return
+	}
 	bar := []Run{
 		{Text: r.th.Glyphs.QuoteBar, Style: r.th.QuoteBar},
 		{Text: " "},
