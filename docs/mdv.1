@@ -272,7 +272,7 @@ then the note's own folder, then the vault root, then anywhere in the vault by
 name, preferring the shallowest match.
 A link or embed that resolves to nothing still shows its label.
 .PP
-Two more pieces of Obsidian syntax work in any document, inside a vault or
+Three more pieces of Obsidian syntax work in any document, inside a vault or
 not:
 .TP
 .B > [!warning] Title
@@ -296,6 +296,12 @@ only
 Inside code it is left alone, and a
 .B %%
 that is never closed is shown rather than hiding the rest of the document.
+.TP
+.B ==highlight==
+Drawn on a yellow background.
+The markers have to touch the text, so
+.B a\~==\~b
+is left as it is.
 .SH ENVIRONMENT
 .TP
 .B MDV_CONFIG

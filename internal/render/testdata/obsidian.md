@@ -37,3 +37,5 @@ It can run to several paragraphs.
 %%
 
 The end.
+
+A ==highlighted phrase== in a sentence, and a == b left alone.

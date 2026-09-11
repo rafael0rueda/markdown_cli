@@ -102,6 +102,7 @@ func Render(source []byte, opts Options) (*Doc, error) {
 		extension.Footnote,
 		wikilinkExtension{},
 		commentExtension{},
+		markExtension{},
 	))
 	root := md.Parser().Parse(text.NewReader(source))
 

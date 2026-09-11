@@ -72,6 +72,9 @@ func (r *renderer) inline(n ast.Node, base theme.Style, link string) []Run {
 	case *extast.Strikethrough:
 		return r.inlineChildren(n, base.Merge(th.Strike), link)
 
+	case *Mark:
+		return r.inlineChildren(n, base.Merge(th.Mark), link)
+
 	case *ast.Link:
 		dest := r.resolve(unescape(n.Destination))
 		runs := r.inlineChildren(n, base.Merge(th.Link), dest)

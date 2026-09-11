@@ -133,6 +133,7 @@ type Theme struct {
 	Emphasis Style
 	Strong   Style
 	Strike   Style
+	Mark     Style // Obsidian's ==highlighted== text
 
 	Code      Style // inline code span
 	CodeBlock Style // fenced/indented block background
@@ -194,6 +195,9 @@ var (
 	mochaMantle   = Hex("#181825")
 	mochaYellow   = Hex("#f9e2af")
 	mochaSubtext1 = Hex("#bac2de")
+
+	// markDark is not part of Catppuccin; see Dark's Mark style.
+	markDark = Hex("#574a1f")
 )
 
 // Catppuccin Latte, used for the light theme.
@@ -261,6 +265,10 @@ func Dark() *Theme {
 		Emphasis: Style{Italic: true},
 		Strong:   Style{Bold: true},
 		Strike:   Style{Strike: true, Faint: true},
+		// Only the background changes, so the text keeps the terminal's own
+		// color. Mocha's yellow is too pale to put light text on, so this is
+		// a darker gold in the same hue.
+		Mark: Style{BG: markDark},
 
 		Code:      Style{FG: mochaPeach, BG: mochaSurface0},
 		CodeBlock: Style{BG: mochaMantle},
@@ -318,6 +326,8 @@ func Light() *Theme {
 		Emphasis: Style{Italic: true},
 		Strong:   Style{Bold: true},
 		Strike:   Style{Strike: true, Faint: true},
+		// Latte's yellow is an orange meant for text; a highlighter is paler.
+		Mark: Style{BG: mochaYellow},
 
 		Code:      Style{FG: lattePeach, BG: latteSurface0},
 		CodeBlock: Style{BG: latteMantle},
@@ -366,10 +376,13 @@ func Plain() *Theme {
 		Emphasis:    Style{Italic: true},
 		Strong:      Style{Bold: true},
 		Strike:      Style{Strike: true},
+		Mark:        Style{Reverse: true},
 		Link:        Style{Underline: true},
 		MetaKey:     Style{Faint: true},
 		Status:      Style{Reverse: true},
-		SearchMatch: Style{Reverse: true},
+		// Reverse alone would vanish inside ==highlighted== text, which is
+		// already reversed, so a match is underlined as well.
+		SearchMatch: Style{Reverse: true, Underline: true},
 	}
 	for i := range t.Headings {
 		t.Headings[i] = Style{Bold: true}
