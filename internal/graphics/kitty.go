@@ -26,6 +26,9 @@ const kittyClearPlacements = "\x1b_Ga=d,d=a\x1b\\"
 type kittyImage struct {
 	id   uint32
 	data []byte
+	// tmux sends every command through tmux's passthrough, and draws with
+	// placeholders instead of placements.
+	tmux bool
 	// pixelWidth and pixelHeight describe the transmitted image, which is what
 	// the crop offsets are measured against.
 	pixelWidth, pixelHeight int
@@ -62,16 +65,23 @@ func (k *kittyImage) transmit() string {
 			more = 1
 		}
 
-		b.WriteString("\x1b_G")
+		start := ""
 		if first {
-			b.WriteString(controls)
-			b.WriteString(",")
+			start = controls + ","
 		}
-		fmt.Fprintf(&b, "m=%d;", more)
-		b.WriteString(chunk)
-		b.WriteString("\x1b\\")
+		// Each chunk is wrapped on its own, keeping every sequence tmux has to
+		// buffer as small as the protocol's.
+		b.WriteString(k.wrap(fmt.Sprintf("\x1b_G%sm=%d;%s\x1b\\", start, more, chunk)))
 	}
 	return b.String()
+}
+
+// wrap prepares a command for the way it reaches the terminal.
+func (k *kittyImage) wrap(seq string) string {
+	if k.tmux {
+		return tmuxPassthrough(seq)
+	}
+	return seq
 }
 
 // place returns the sequence that draws an already-transmitted image at the

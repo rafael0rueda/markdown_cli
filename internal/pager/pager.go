@@ -24,8 +24,9 @@ type ImageDrawer interface {
 	// displayed, without discarding the data behind them.
 	ClearPlacements() string
 	// DrawCropped returns the sequence drawing rows [skip, skip+visible) of an
-	// image at the cursor, in a box cols wide.
-	DrawCropped(ref string, cols, rows, skip, visible int) (string, error)
+	// image at the cursor, in a box cols wide whose rows start indent columns
+	// from the left margin.
+	DrawCropped(ref string, cols, rows, skip, visible, indent int) (string, error)
 }
 
 // Options configures a pager session.

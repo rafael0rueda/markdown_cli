@@ -42,6 +42,12 @@ type Caps struct {
 	Terminal string
 	// Multiplexer is "tmux", "screen", or empty.
 	Multiplexer string
+	// Passthrough reports that kitty graphics reach the terminal through
+	// tmux, and so have to be drawn in the way tmux can keep track of.
+	Passthrough bool
+	// Note is advice for the capabilities report, such as how to let tmux
+	// pass images through.
+	Note string
 
 	// Probed records whether the terminal actually answered a query.
 	Probed bool
@@ -97,27 +103,38 @@ func Detect(opts DetectOptions) Caps {
 		caps.CellWidth, caps.CellHeight = w/caps.Cols, h/caps.Rows
 	}
 
-	if !opts.Probe {
-		caps.ProbeErr = "probing disabled"
-		return caps
-	}
-	if caps.Multiplexer != "" {
-		// Inside tmux or screen the replies are intercepted by the
-		// multiplexer, and graphics need passthrough wrapping that is not
-		// implemented yet. Reporting the environment's view is more useful
-		// than reporting a probe that cannot succeed.
-		caps.ProbeErr = "not probing inside " + caps.Multiplexer
-		caps.KittyGraphics = false
-		caps.Sixel = false
-		return caps
-	}
-
 	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = DefaultProbeTimeout
 	}
+
+	queries := directQueries
+	var client tmuxClient
+	switch caps.Multiplexer {
+	case "tmux":
+		// Whatever the environment claims about graphics is about some
+		// terminal, not necessarily the one attached. Asking tmux is not
+		// asking the terminal, and is quick, so it happens even when probing
+		// is off.
+		caps.KittyGraphics, caps.Sixel, caps.KittyKeyboard = false, false, false
+		var err error
+		client, err = queryTmux(timeout)
+		applyTmux(&caps, client, err)
+		queries = tmuxQueries
+	case "screen":
+		// screen intercepts the replies and has no way to draw images.
+		caps.ProbeErr = "not probing inside screen"
+		caps.KittyGraphics, caps.Sixel, caps.KittyKeyboard = false, false, false
+		return caps
+	}
+
+	if !opts.Probe {
+		caps.ProbeErr = "probing disabled"
+		return caps
+	}
+
 	start := time.Now()
-	res, err := probe(timeout)
+	res, err := probe(queries, timeout)
 	caps.ProbeTime = time.Since(start)
 	if err != nil {
 		caps.ProbeErr = err.Error()
@@ -131,8 +148,14 @@ func Detect(opts DetectOptions) Caps {
 	}
 
 	caps.Probed = true
-	caps.KittyGraphics = res.kittyGraphics
-	caps.Sixel = res.sixel
+	if caps.Multiplexer == "tmux" {
+		// tmux answered the device attributes itself, so the sixel flag says
+		// tmux can draw sixel; the terminal it draws on has to as well.
+		caps.Sixel = res.sixel && client.sixel
+	} else {
+		caps.KittyGraphics = res.kittyGraphics
+		caps.Sixel = res.sixel
+	}
 	caps.KittyKeyboard = res.kittyKeyboard
 	if res.hasBackground {
 		caps.Background, caps.HasBackground = res.background, true

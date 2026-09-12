@@ -512,7 +512,7 @@ type drawCall struct {
 
 func (f *fakeDrawer) ClearPlacements() string { return "" }
 
-func (f *fakeDrawer) DrawCropped(ref string, cols, rows, skip, visible int) (string, error) {
+func (f *fakeDrawer) DrawCropped(ref string, cols, rows, skip, visible, indent int) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, drawCall{ref, cols, rows, skip, visible})

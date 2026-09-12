@@ -245,9 +245,20 @@ OSC 8 shows the URL in parentheses, and one without color gets plain text.
 Links to local files are shown relative to where you are, so they stay short
 and can be pasted straight into a shell.
 
-Nothing is probed inside **tmux or screen** — the multiplexer intercepts the
-replies, and graphics need passthrough wrapping that is not implemented yet.
-mdv reports the environment's view and says so.
+**Inside tmux**, images work in kitty and Ghostty. mdv asks tmux which
+terminal is attached, sends pictures through to it, and draws them with the
+kitty protocol's Unicode placeholders: ordinary characters that tmux keeps
+track of, so a picture scrolls with the text, survives switching windows, and
+stays in the scrollback. tmux has to let them through, and `mdv -caps` says so
+when it doesn't:
+
+```
+set -g allow-passthrough on
+```
+
+Sixel works through tmux 3.4 and newer when tmux was built with it and the
+terminal outside has it, and links are clickable when tmux passes hyperlinks
+on. **screen** cannot pass images on, so it gets alt text.
 
 ## How it works
 

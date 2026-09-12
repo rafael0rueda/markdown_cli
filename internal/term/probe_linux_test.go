@@ -72,7 +72,7 @@ func TestProbeAgainstSupportingTerminal(t *testing.T) {
 	reply := replyKittyOK + replyKeyboard + replyBGDark + replyCellSize + replyDASixel
 	seen := fakeTerminal(t, master, reply, 0)
 
-	got, err := queryTTY(slave, 2*time.Second)
+	got, err := queryTTY(slave, directQueries, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestProbeAgainstSilentTerminal(t *testing.T) {
 	fakeTerminal(t, master, "", 0)
 
 	start := time.Now()
-	got, err := queryTTY(slave, 150*time.Millisecond)
+	got, err := queryTTY(slave, directQueries, 150*time.Millisecond)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -130,7 +130,7 @@ func TestProbeAgainstPlainTerminal(t *testing.T) {
 	master, slave := openPTY(t)
 	fakeTerminal(t, master, replyDAPlain, 0)
 
-	got, err := queryTTY(slave, 2*time.Second)
+	got, err := queryTTY(slave, directQueries, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestProbeReturnsEarly(t *testing.T) {
 	fakeTerminal(t, master, replyKittyOK+replyDASixel, 0)
 
 	start := time.Now()
-	if _, err := queryTTY(slave, 5*time.Second); err != nil {
+	if _, err := queryTTY(slave, directQueries, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
@@ -163,7 +163,7 @@ func TestProbeToleratesSlowTerminal(t *testing.T) {
 	master, slave := openPTY(t)
 	fakeTerminal(t, master, replyKittyOK+replyDASixel, 120*time.Millisecond)
 
-	got, err := queryTTY(slave, 2*time.Second)
+	got, err := queryTTY(slave, directQueries, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestProbeRestoresTerminalState(t *testing.T) {
 		t.Skipf("cannot read termios: %v", err)
 	}
 
-	if _, err := queryTTY(slave, 100*time.Millisecond); err != nil {
+	if _, err := queryTTY(slave, directQueries, 100*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 
@@ -218,7 +218,7 @@ func TestProbeRepliesArrivingInPieces(t *testing.T) {
 		}
 	}()
 
-	got, err := queryTTY(slave, 2*time.Second)
+	got, err := queryTTY(slave, directQueries, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestProbeWithoutControllingTerminal(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		if _, err := probe(50 * time.Millisecond); err != nil && !errors.Is(err, io.EOF) {
+		if _, err := probe(directQueries, 50*time.Millisecond); err != nil && !errors.Is(err, io.EOF) {
 			t.Logf("probe returned: %v", err)
 		}
 	}()

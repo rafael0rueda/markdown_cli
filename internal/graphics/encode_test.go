@@ -603,7 +603,7 @@ func TestPreparedDrawCropsByRow(t *testing.T) {
 	}
 
 	// Skipping half the rows should skip about half the pixels.
-	out := prep.draw(5, 5)
+	out := prep.draw(5, 5, 0)
 	y := regexpFind(out, `y=(\d+)`)
 	h := regexpFind(out, `h=(\d+)`)
 	if y == "" || h == "" {
@@ -632,12 +632,12 @@ func TestPreparedDrawOutOfRange(t *testing.T) {
 		{10, 10}, // well past the end
 		{0, -1},  // negative
 	} {
-		if got := prep.draw(tt.skip, tt.visible); got != "" {
+		if got := prep.draw(tt.skip, tt.visible, 0); got != "" {
 			t.Errorf("draw(%d, %d) should be empty, got %q", tt.skip, tt.visible, truncate(got))
 		}
 	}
 	// More rows requested than exist is clamped to what there is.
-	if got := prep.draw(0, 100); !strings.Contains(got, "r=4") {
+	if got := prep.draw(0, 100, 0); !strings.Contains(got, "r=4") {
 		t.Errorf("an overlong draw should be clamped to 4 rows: %q", truncate(got))
 	}
 }

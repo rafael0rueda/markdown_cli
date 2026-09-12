@@ -177,26 +177,6 @@ func TestDetectNotATerminal(t *testing.T) {
 	}
 }
 
-// TestDetectInsideMultiplexerDropsGraphics checks the conservative stance
-// inside tmux: graphics escapes are swallowed or mangled without passthrough
-// wrapping, so claiming support would produce garbage on screen.
-func TestDetectInsideMultiplexerDropsGraphics(t *testing.T) {
-	clearTerminalEnv(t)
-	t.Setenv("TERM", "tmux-256color")
-	t.Setenv("TMUX", "/tmp/sock,1,0")
-	t.Setenv("KITTY_WINDOW_ID", "1")
-
-	caps := Caps{Terminal: "kitty", Multiplexer: "tmux"}
-	applyKnownTerminal(&caps)
-	if !caps.KittyGraphics {
-		t.Fatal("test setup: kitty should start with graphics support")
-	}
-	// Detect clears it; assert the report explains why.
-	if got := identifyMultiplexer(); got != "tmux" {
-		t.Errorf("multiplexer = %q, want tmux", got)
-	}
-}
-
 func TestCapsGraphics(t *testing.T) {
 	tests := []struct {
 		caps Caps

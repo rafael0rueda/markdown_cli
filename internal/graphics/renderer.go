@@ -60,6 +60,10 @@ type Renderer struct {
 	// CellWidth and CellHeight are the pixel size of a terminal cell. Zero
 	// means unknown, and the defaults are used.
 	CellWidth, CellHeight int
+	// Tmux draws kitty images from inside tmux: through its passthrough, and
+	// with Unicode placeholders that tmux keeps in place as text. Sixel needs
+	// nothing of the kind, since tmux draws sixel itself.
+	Tmux bool
 
 	// nextID hands out kitty image identifiers.
 	nextID atomic.Uint32
@@ -114,6 +118,13 @@ func (r *Renderer) Measure(ref string, maxCols, maxRows int, hint render.SizeHin
 		return 0, 0, err
 	}
 	maxCols, maxRows = r.applyHint(maxCols, maxRows, hint)
+	if r.placeholders() {
+		// Placeholders can only number so many rows and columns.
+		maxCols = min(maxCols, maxPlaceholderCells)
+		if maxRows <= 0 || maxRows > maxPlaceholderCells {
+			maxRows = maxPlaceholderCells
+		}
+	}
 	geo := r.fit(src, maxCols, maxRows)
 	if geo.Cols < 1 || geo.Rows < 1 {
 		return 0, 0, errors.New("image is too small to draw")
@@ -206,6 +217,7 @@ func (r *Renderer) prepare(ref string, cols, rows int) (*Prepared, error) {
 		if err != nil {
 			return nil, err
 		}
+		img.tmux = r.Tmux
 		p.kitty, p.pixelHeight = img, img.pixelHeight
 
 	case Sixel:
@@ -225,17 +237,31 @@ func (r *Renderer) prepare(ref string, cols, rows int) (*Prepared, error) {
 }
 
 // draw returns the sequence that renders rows [skip, skip+visible) of the
-// image at the cursor, without any surrounding cursor movement.
+// image at the cursor, indented by indent columns, without any surrounding
+// cursor movement.
 //
 // Cropping in rows is what lets an image be scrolled through rather than
 // appearing and disappearing whole. The row range is converted to pixels
 // against the prepared height, so it stays correct whatever the terminal's
 // cell size turned out to be.
-func (p *Prepared) draw(skip, visible int) string {
+func (p *Prepared) draw(skip, visible, indent int) string {
 	if p == nil || visible < 1 || skip >= p.rows {
 		return ""
 	}
 	visible = min(visible, p.rows-skip)
+
+	if p.protocol == Kitty && p.kitty.tmux {
+		// Placeholder cells name their rows, so cropping is just leaving
+		// the others out.
+		var b strings.Builder
+		if !p.sent {
+			b.WriteString(p.kitty.transmit())
+			b.WriteString(p.kitty.wrap(p.kitty.virtualPlacement(p.cols, p.rows)))
+			p.sent = true
+		}
+		b.WriteString(p.kitty.placeholders(p.cols, skip, visible, indent))
+		return b.String()
+	}
 
 	top := skip * p.pixelHeight / p.rows
 	bottom := (skip + visible) * p.pixelHeight / p.rows
@@ -264,23 +290,29 @@ func (p *Prepared) draw(skip, visible int) string {
 //
 // Sixel has no notion of a placement - the pixels were written into the screen
 // like text - so there is nothing to clear and redrawing the frame is what
-// erases them.
+// erases them. Placeholders are text outright, and go the same way.
 func (r *Renderer) ClearPlacements() string {
-	if r != nil && r.Protocol == Kitty {
+	if r != nil && r.Protocol == Kitty && !r.Tmux {
 		return kittyClearPlacements
 	}
 	return ""
 }
 
+// placeholders reports whether images are drawn as placeholder cells.
+func (r *Renderer) placeholders() bool {
+	return r.Protocol == Kitty && r.Tmux
+}
+
 // DrawCropped returns the escape sequence drawing part of an image at the
 // cursor, for a caller that positions the cursor itself. The pager uses this;
-// it does no cursor movement of its own beyond what the protocol requires.
-func (r *Renderer) DrawCropped(ref string, cols, rows, skip, visible int) (string, error) {
+// it does no cursor movement of its own beyond what the protocol requires,
+// and indent is where the image's rows after the first begin.
+func (r *Renderer) DrawCropped(ref string, cols, rows, skip, visible, indent int) (string, error) {
 	prep, err := r.Prepare(ref, cols, rows)
 	if err != nil {
 		return "", err
 	}
-	seq := prep.draw(skip, visible)
+	seq := prep.draw(skip, visible, indent)
 	if seq == "" {
 		return "", errors.New("nothing to draw")
 	}
@@ -302,7 +334,7 @@ func (r *Renderer) Encode(ref string, cols, rows, indent int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	payload := prep.draw(0, rows)
+	payload := prep.draw(0, rows, indent)
 	if payload == "" {
 		return "", errors.New("image encoded to nothing")
 	}

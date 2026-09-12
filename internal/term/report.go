@@ -38,7 +38,11 @@ func (c Caps) Report() string {
 	b.WriteString("| Feature | Supported |\n|---|---|\n")
 	row("Kitty graphics", yesNo(c.KittyGraphics))
 	row("Sixel graphics", yesNo(c.Sixel))
-	row("Image protocol in use", c.Graphics())
+	protocol := c.Graphics()
+	if c.Passthrough && protocol == "kitty" {
+		protocol += ", through tmux"
+	}
+	row("Image protocol in use", protocol)
 	row("Kitty keyboard protocol", yesNo(c.KittyKeyboard))
 	row("Hyperlinks (OSC 8)", yesNo(c.Hyperlinks))
 
@@ -53,6 +57,9 @@ func (c Caps) Report() string {
 			"than what it does.\n", c.ProbeErr)
 	default:
 		b.WriteString("No live probe was attempted.\n")
+	}
+	if c.Note != "" {
+		fmt.Fprintf(&b, "\nNote: %s.\n", c.Note)
 	}
 
 	return b.String()

@@ -704,3 +704,24 @@ func TestFileHeaderSanitizesTheName(t *testing.T) {
 		t.Errorf("header should still fill the width once sanitized: got %d", got)
 	}
 }
+
+// TestResolveImagesInsideTmux: kitty graphics inside tmux have to go through
+// it, whether they were detected or asked for by name.
+func TestResolveImagesInsideTmux(t *testing.T) {
+	for _, flag := range []string{"auto", "kitty"} {
+		got, err := resolveImages(config{images: flag}, term.Caps{KittyGraphics: true, Multiplexer: "tmux"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r, ok := got.(*graphics.Renderer); !ok || !r.Tmux {
+			t.Errorf("-images %s: got %+v, want a renderer drawing through tmux", flag, got)
+		}
+	}
+	got, err := resolveImages(config{images: "kitty"}, term.Caps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.(*graphics.Renderer).Tmux {
+		t.Error("outside tmux images should be placed directly")
+	}
+}

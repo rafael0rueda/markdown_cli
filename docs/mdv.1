@@ -172,6 +172,7 @@ The first thing to try when something renders wrongly.
 .TP
 .B \-no\-probe
 Do not query the terminal; decide everything from environment variables.
+Inside tmux, tmux itself is still asked which terminal is attached.
 .TP
 .BI \-probe\-timeout " duration"
 How long to wait for the terminal to answer its queries, such as
@@ -382,11 +383,20 @@ turns color off.
 .B COLORFGBG
 Whether the background is dark, when the terminal cannot be asked.
 .TP
-.BR TMUX ", " STY
-Inside tmux or screen the terminal is not probed, because the multiplexer
-intercepts the replies, and images are only drawn if
-.B \-images
-asks for them.
+.B TMUX
+Inside tmux, mdv asks tmux which terminal is attached rather than trusting the
+environment. In kitty and Ghostty, images are sent through tmux and drawn as
+Unicode placeholders, which tmux scrolls and redraws like text; this needs
+.B set \-g allow\-passthrough on
+in
+.IR tmux.conf ,
+and
+.B \-caps
+says when it is missing. Sixel is drawn when tmux and the terminal outside
+both have it.
+.TP
+.B STY
+Inside screen the terminal is not probed, and images are not drawn.
 .SH EXIT STATUS
 .TP
 .B 0

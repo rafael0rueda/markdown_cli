@@ -11,7 +11,7 @@ import (
 	xterm "golang.org/x/term"
 )
 
-// queries is the string sent to the terminal to ask what it supports.
+// directQueries is the string sent to the terminal to ask what it supports.
 //
 // Everything goes out in one write and the replies are read back together.
 // The order matters only at the end: primary device attributes is last
@@ -19,10 +19,16 @@ import (
 // earlier queries have been processed. Without that terminator there would be
 // no way to distinguish "does not support graphics" from "has not replied
 // yet", and the only option would be to always wait out the full timeout.
-const queries = "" +
+const directQueries = "" +
 	// Kitty graphics: transmit a one-pixel RGB image in query mode. A
 	// supporting terminal replies ESC _ G i=31;OK ST and displays nothing.
 	"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\" +
+	tmuxQueries
+
+// tmuxQueries is what can be asked from inside tmux. It leaves out the kitty
+// graphics query, which tmux would take for a new pane title; tmux itself says
+// whether images can get through.
+const tmuxQueries = "" +
 	// Kitty keyboard protocol: ask for the current flags.
 	"\x1b[?u" +
 	// Background color.
@@ -37,19 +43,19 @@ const queries = "" +
 // It talks to /dev/tty rather than to stdin and stdout, so it works when
 // either has been redirected - which is the common case, since markdown is
 // often piped in and the output often piped onward.
-func probe(timeout time.Duration) (response, error) {
+func probe(queries string, timeout time.Duration) (response, error) {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
 		return response{}, errors.New("no controlling terminal")
 	}
 	defer tty.Close()
-	return queryTTY(tty, timeout)
+	return queryTTY(tty, queries, timeout)
 }
 
-// queryTTY writes the query string to an open terminal and reads back the
-// replies. It is separated from opening /dev/tty so tests can drive it with a
+// queryTTY writes the queries to an open terminal and reads back the replies.
+// It is separated from opening /dev/tty so tests can drive it with a
 // pseudo-terminal on the other end.
-func queryTTY(tty *os.File, timeout time.Duration) (response, error) {
+func queryTTY(tty *os.File, queries string, timeout time.Duration) (response, error) {
 	fd := int(tty.Fd())
 
 	// Raw mode is required so replies arrive as bytes instead of being eaten

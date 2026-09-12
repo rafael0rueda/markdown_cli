@@ -114,7 +114,7 @@ func (p *pager) drawImages() {
 			continue
 		}
 
-		seq, err := p.opts.Images.DrawCropped(img.Ref, img.Cols, img.Rows, skip, visible)
+		seq, err := p.opts.Images.DrawCropped(img.Ref, img.Cols, img.Rows, skip, visible, img.Indent)
 		if err != nil {
 			// The alt text is already on the line beneath, so a picture that
 			// cannot be drawn simply leaves it showing.

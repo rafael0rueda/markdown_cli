@@ -526,6 +526,9 @@ func resolveImages(cfg config, caps term.Caps) (render.ImageHandler, error) {
 		Loader:     &graphics.Loader{AllowRemote: cfg.remoteImg},
 		CellWidth:  caps.CellWidth,
 		CellHeight: caps.CellHeight,
+		// Asked for by name or found, kitty graphics inside tmux have to go
+		// through it.
+		Tmux: caps.Multiplexer == "tmux",
 	}, nil
 }
 
